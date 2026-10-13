@@ -76,6 +76,14 @@ function MobilGirisEkrani() {
   const [yukleniyor, setYukleniyor] = useState(false);
   const [islemMesaj, setIslemMesaj] = useState<{ tip: "basarili" | "hata"; metin: string } | null>(null);
 
+  // TEŞHİS (geçici): sorun çözülünce silinecek
+  const [subeHata, setSubeHata] = useState<string | null>(null);
+  const [subeYuklendi, setSubeYuklendi] = useState(false);
+  const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const envKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+  const urlHost = envUrl.replace(/^https?:\/\//, "").split(".")[0];
+  const anahtarBosluk = envKey !== envKey.trim() || /\s/.test(envKey);
+
   // İzin / Rapor Talep Modalı
   const [izinModalAcik, setIzinModalAcik] = useState(false);
   const [talepYukleniyor, setTalepYukleniyor] = useState(false);
@@ -89,8 +97,13 @@ function MobilGirisEkrani() {
 
   useEffect(() => {
     async function baslat() {
-      const { data } = await supabase.from("subeler").select("*");
-      if (data) setSubeler(data);
+      const { data, error } = await supabase.from("subeler").select("*");
+      if (error) {
+        setSubeHata(`${error.message} (kod: ${error.code || "-"})`);
+      } else if (data) {
+        setSubeler(data);
+      }
+      setSubeYuklendi(true);
 
       const kayitliTc = localStorage.getItem("mns_user_tc");
       if (kayitliTc) {
@@ -153,7 +166,15 @@ function MobilGirisEkrani() {
         .single();
 
       if (error || !data) {
-        setIslemMesaj({ tip: "hata", metin: "Bu T.C. Kimlik No ile kayıtlı personel bulunamadı." });
+        // PGRST116 = sorgu çalıştı ama satır bulunamadı. Başka bir kod gerçek bir hatadır.
+        if (error && error.code !== "PGRST116") {
+          setIslemMesaj({
+            tip: "hata",
+            metin: `Veritabanı hatası: ${error.message} (kod: ${error.code || "-"})`,
+          });
+        } else {
+          setIslemMesaj({ tip: "hata", metin: "Bu T.C. Kimlik No ile kayıtlı personel bulunamadı." });
+        }
         setPersonel(null);
         return;
       }
@@ -398,7 +419,11 @@ function MobilGirisEkrani() {
               </div>
             </div>
           ) : (
-            <p className="text-xs text-slate-400">En yakın şube taranıyor...</p>
+            <p className="text-xs text-slate-400">
+              {subeYuklendi && subeler.length === 0
+                ? "Sistemde tanımlı şube bulunamadı."
+                : "En yakın şube taranıyor..."}
+            </p>
           )}
         </div>
 
@@ -469,6 +494,18 @@ function MobilGirisEkrani() {
             )}
           </div>
         )}
+
+        {/* TEŞHİS KUTUSU (geçici, sorun çözülünce silinecek) */}
+        <div className="bg-slate-950 border border-dashed border-slate-600 p-3 rounded-2xl text-[11px] font-mono text-slate-400 space-y-1">
+          <p className="text-slate-200 font-bold">🔧 Teşhis (geçici)</p>
+          <p>URL proje: {urlHost || "YOK (boş)"}</p>
+          <p>Anahtar uzunluğu: {envKey.length} {envKey.length === 0 && "(BOŞ!)"}</p>
+          <p>Anahtar eyJ ile başlıyor: {envKey.startsWith("eyJ") ? "evet" : "HAYIR"}</p>
+          <p>Anahtarda boşluk/satır sonu: {anahtarBosluk ? "VAR (SORUN)" : "yok"}</p>
+          <p>Şube sorgusu bitti: {subeYuklendi ? "evet" : "hayır"}</p>
+          <p>Gelen şube sayısı: {subeler.length}</p>
+          <p className={subeHata ? "text-red-400" : ""}>Şube hatası: {subeHata || "yok"}</p>
+        </div>
       </div>
 
       {/* İzin / Rapor Talep Modalı */}
