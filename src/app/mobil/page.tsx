@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { supabase } from "../supabase";
 
 interface Sube {
@@ -60,7 +60,7 @@ function cihazKimligiUret(): string {
   return id;
 }
 
-export default function MobilGirisEkrani() {
+function MobilGirisEkrani() {
   const [tcGiris, setTcGiris] = useState("");
   const [personel, setPersonel] = useState<Personel | null>(null);
   const [subeler, setSubeler] = useState<Sube[]>([]);
@@ -554,5 +554,13 @@ export default function MobilGirisEkrani() {
         <p className="text-[10px] text-slate-500">MNS Next IK Akıllı PDKS Platformu • GPS Korumalı</p>
       </footer>
     </div>
+  );
+}
+
+export default function MobilPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-900" />}>
+      <MobilGirisEkrani />
+    </Suspense>
   );
 }
