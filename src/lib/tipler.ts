@@ -96,6 +96,16 @@ export interface MesaiTalebi {
   personeller?: { ad: string; soyad: string; sicil_no: string; varsayilan_sube_id: string | null } | null;
 }
 
+/** Kilitli personelin "bu telefonu tanımlat" talebi (cihaz yetkili yöneticinin onayına gider) */
+export interface CihazTalebi {
+  id: string;
+  personel_id: string;
+  cihaz_bilgisi: string | null;
+  durum: "BEKLEMEDE" | "ONAYLANDI" | "REDDEDILDI" | "IPTAL";
+  created_at: string;
+  personeller?: { ad: string; soyad: string; sicil_no: string; varsayilan_sube_id: string | null } | null;
+}
+
 export interface ResmiTatil {
   id: string;
   tarih: string;
@@ -184,6 +194,8 @@ export function hataYaz(err: unknown): string {
   const kilit = metin.match(/AY_KILITLI: (\d{4}-\d{2})/);
   if (kilit) return `${kilit[1]} ayı kapatılmış; bu aya ait kayıt değiştirilemez. Genel yönetici ayı açabilir.`;
   if (metin.includes("KORUNAN_ALAN")) return "PIN ve cihaz bilgisi yalnızca kendi düğmeleriyle değiştirilebilir.";
+  if (metin.includes("CIHAZ_BASKASINDA")) return "Bu telefon başka bir personele kayıtlı; önce o personelin cihaz kilidini açın.";
+  if (metin.includes("TALEP_SONUCLANMIS")) return "Bu talep zaten sonuçlanmış.";
   if (metin.includes("YETKISIZ") || /row-level security|permission denied/i.test(metin))
     return "Bu işlem için yetkiniz yok. Genel yöneticiden yetki isteyin.";
   return metin;

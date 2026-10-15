@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { kisaTarih, selamlama, sureYaz, uzunTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
 import { Avatar, Ikon, Marka, Modal, useBildirim } from "../../components/ui";
@@ -10,6 +10,7 @@ import { gunPlani, planHaritasi, vardiyaCozucu, type GunPlani, type PlanSatiri, 
 import { VardiyamKarti } from "../../components/mobil/Vardiyam";
 import BildirimDugmesi from "../../components/BildirimDugmesi";
 import { olayBildir } from "../../lib/bildirim";
+import { anaEkrandaMi, cihazBilgisi, cihazKimligi, iosMu } from "../../lib/cihazKimligi";
 import { gunYaz, type IzinBakiyesi } from "../../lib/tipler";
 import { DK_MS, VARSAYILAN_AYARLAR } from "../../lib/ayarlar";
 
@@ -82,7 +83,6 @@ interface Hareket {
 }
 
 const TOKEN_ANAHTAR = "mns_token";
-const CIHAZ_ANAHTAR = "mns_device_id";
 const IPUCU_ANAHTAR = "mns_ipucu_kapali";
 
 /** "14 Eki Salı" */
@@ -104,19 +104,10 @@ function mesafeHesapla(lat1: number, lon1: number, lat2: number, lon2: number): 
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-// Cihaz kimliği: ilk açılışta rastgele üretilir ve tarayıcıda saklanır.
-// Mevcut bir kimlik varsa korunur, eski eşleşmeler bozulmaz.
-function cihazKimligi(): string {
-  let id = localStorage.getItem(CIHAZ_ANAHTAR);
-  if (!id) {
-    const rastgele =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2) + Date.now().toString(36) + Math.random().toString(36).slice(2);
-    id = "D-" + rastgele;
-    localStorage.setItem(CIHAZ_ANAHTAR, id);
-  }
-  return id;
+/** Kilitli girişte bu telefondan gönderilmiş yeni telefon talebi */
+interface CihazTalebi {
+  id: string;
+  durum: "BEKLEMEDE" | "ONAYLANDI" | "REDDEDILDI" | "IPTAL";
 }
 
 function hataMetni(kod: string | undefined, veri?: Record<string, unknown>): string {
@@ -126,7 +117,11 @@ function hataMetni(kod: string | undefined, veri?: Record<string, unknown>): str
     case "HESAP_KILITLI":
       return "Çok fazla hatalı deneme yapıldı. 15 dakika sonra tekrar deneyin.";
     case "CIHAZ_KILITLI":
-      return "Bu hesap başka bir telefona bağlı. İK yöneticinizden kilidi açmasını isteyin.";
+      return "Hesabınız başka bir telefona kayıtlı.";
+    case "CIHAZ_BASKASINDA":
+      return "Bu telefon başka bir personele kayıtlı. Herkes yalnızca kendi telefonundan giriş yapabilir.";
+    case "COK_FAZLA_TALEP":
+      return "Bugün çok fazla telefon talebi gönderildi. Yöneticinize başvurun.";
     case "PIN_TANIMSIZ":
       return "Henüz PIN tanımlanmamış. İK yöneticinize başvurun.";
     case "SINIR_DISI":
@@ -226,6 +221,11 @@ function MobilGirisEkrani() {
   const [pinGiris, setPinGiris] = useState("");
   const [pinGoster, setPinGoster] = useState(false);
   const [girisHata, setGirisHata] = useState<string | null>(null);
+  // Hesap başka telefona kayıtlıysa: bu telefondan gönderilen talep (null: henüz talep yok)
+  const [cihazKilidi, setCihazKilidi] = useState<{ talep: CihazTalebi | null } | null>(null);
+  const [talepGonderiliyor, setTalepGonderiliyor] = useState(false);
+  // iPhone Safari: ana ekran uygulaması ayrı telefon sayılır, giriş ekranında uyarılır
+  const [iosTarayici, setIosTarayici] = useState(false);
 
   const [personel, setPersonel] = useState<Personel | null>(null);
   const [subeler, setSubeler] = useState<Sube[]>([]);
@@ -317,10 +317,11 @@ function MobilGirisEkrani() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIzinTalep((s) => ({ ...s, baslangic_tarihi: bugun, bitis_tarihi: bugun }));
 
-    const bagimsiz =
-      window.matchMedia("(display-mode: standalone)").matches ||
-      (navigator as unknown as { standalone?: boolean }).standalone === true;
+    const bagimsiz = anaEkrandaMi();
     setIpucuGoster(!bagimsiz && localStorage.getItem(IPUCU_ANAHTAR) !== "1");
+    setIosTarayici(!bagimsiz && iosMu());
+    // Silinmiş depoları diğerlerinden geri yükler
+    cihazKimligi().catch(() => {});
 
     async function baslat() {
       if (t) {
@@ -432,8 +433,7 @@ function MobilGirisEkrani() {
     setSecilenIslem(icerde ? "cikis" : "giris");
   }
 
-  async function girisYap(e: FormEvent) {
-    e.preventDefault();
+  async function girisDene() {
     if (tcGiris.length !== 11 || pinGiris.length < 4) return;
 
     setYukleniyor(true);
@@ -442,17 +442,24 @@ function MobilGirisEkrani() {
       const { data, error } = await supabase.rpc("personel_giris", {
         p_tc: tcGiris,
         p_pin: pinGiris,
-        p_cihaz: cihazKimligi(),
+        p_cihaz: await cihazKimligi(),
       });
       if (error) throw error;
 
       if (!data?.ok) {
+        if (data?.hata === "CIHAZ_KILITLI") {
+          // PIN doğru, telefon farklı: PIN onay beklenirken bellekte tutulur, onay gelince otomatik giriş yapılır
+          setCihazKilidi({ talep: data.talep ?? null });
+          return;
+        }
+        setCihazKilidi(null);
         setGirisHata(hataMetni(data?.hata));
         setPinGiris("");
         return;
       }
 
       localStorage.setItem(TOKEN_ANAHTAR, data.token);
+      setCihazKilidi(null);
       setToken(data.token);
       setPersonel(data.personel);
       setPinGiris("");
@@ -464,6 +471,65 @@ function MobilGirisEkrani() {
       setYukleniyor(false);
     }
   }
+
+  function girisYap(e: FormEvent) {
+    e.preventDefault();
+    girisDene();
+  }
+
+  async function cihazTalebiGonder() {
+    setTalepGonderiliyor(true);
+    setGirisHata(null);
+    try {
+      const cihaz = await cihazKimligi();
+      const { data, error } = await supabase.rpc("cihaz_talebi_olustur", {
+        p_tc: tcGiris,
+        p_pin: pinGiris,
+        p_cihaz: cihaz,
+        p_bilgi: cihazBilgisi(),
+      });
+      if (error) throw error;
+      if (!data?.ok) {
+        // Bu arada kilit açıldıysa doğrudan giriş yapılır
+        if (data?.hata === "TALEP_GEREKSIZ") return girisDene();
+        setCihazKilidi(null);
+        setGirisHata(hataMetni(data?.hata));
+        setPinGiris("");
+        return;
+      }
+      setCihazKilidi({ talep: { id: data.talep_id, durum: "BEKLEMEDE" } });
+      if (data.yeni) olayBildir({ olay: "cihaz", talep_id: data.talep_id, cihaz });
+    } catch {
+      setGirisHata("Talep gönderilemedi. İnternet bağlantınızı kontrol edin.");
+    } finally {
+      setTalepGonderiliyor(false);
+    }
+  }
+
+  function cihazKilidiVazgec() {
+    setCihazKilidi(null);
+    setPinGiris("");
+  }
+
+  // Onay beklenirken talep durumu birkaç saniyede bir sorulur; onaylanınca otomatik giriş yapılır
+  const talepSonuclandi = useEffectEvent((durum: CihazTalebi["durum"]) => {
+    if (durum === "ONAYLANDI") girisDene();
+    else setCihazKilidi((k) => (k?.talep ? { talep: { ...k.talep, durum } } : k));
+  });
+  const bekleyenTalepId = cihazKilidi?.talep?.durum === "BEKLEMEDE" ? cihazKilidi.talep.id : null;
+  useEffect(() => {
+    if (!bekleyenTalepId) return;
+    let iptal = false;
+    const zamanlayici = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      const { data } = await supabase.rpc("cihaz_talebi_durum", { p_talep_id: bekleyenTalepId, p_cihaz: await cihazKimligi() });
+      if (!iptal && data?.ok && data.durum !== "BEKLEMEDE") talepSonuclandi(data.durum);
+    }, 5000);
+    return () => {
+      iptal = true;
+      clearInterval(zamanlayici);
+    };
+  }, [bekleyenTalepId]);
 
   async function cikisYap() {
     if (token) await supabase.rpc("oturum_kapat", { p_token: token });
@@ -594,64 +660,120 @@ function MobilGirisEkrani() {
         <h1 className="baslik-font m1 mt-8 text-4xl leading-tight">Mesaiye başlamadan önce giriş yapın</h1>
         <p className="m2 mt-3 text-base">T.C. kimlik numaranız ve İK birimi tarafından verilen PIN ile devam edin.</p>
 
-        <form onSubmit={girisYap} className="mt-8 space-y-4">
-          <div>
-            <label className="etiket" htmlFor="tc">
-              T.C. kimlik no
-            </label>
-            <input
-              id="tc"
-              className="girdi sayi"
-              style={{ height: 52, fontSize: 18 }}
-              inputMode="numeric"
-              maxLength={11}
-              autoComplete="username"
-              value={tcGiris}
-              onChange={(e) => setTcGiris(e.target.value.replace(/\D/g, ""))}
-            />
+        {cihazKilidi ? (
+          <div className="panel-ic mt-8 space-y-4 p-5">
+            {cihazKilidi.talep?.durum === "BEKLEMEDE" ? (
+              <>
+                <p className="baslik-font m1 flex items-center gap-2 text-xl">
+                  <Ikon ad="telefon" />
+                  Onay bekleniyor
+                </p>
+                <p className="m2 text-sm">
+                  Yöneticinize bildirim gönderildi. Onayladığında bu ekrandan kendiliğinden giriş yapılacak. Sayfayı
+                  kapatırsanız onaydan sonra PIN&apos;inizle yeniden giriş yapın.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="baslik-font m1 flex items-center gap-2 text-xl">
+                  <Ikon ad="kilit" />
+                  Bu telefon hesabınıza kayıtlı değil
+                </p>
+                <p className="m2 text-sm">
+                  {cihazKilidi.talep?.durum === "REDDEDILDI" ? "Önceki talebiniz reddedildi. " : ""}
+                  Telefonunuzu değiştirdiyseniz ya da tarayıcı verileri silindiyse, bu telefonu tanımlatmak için
+                  yöneticinize onay isteği gönderin. Onaylanınca eski telefondaki oturumunuz kapanır.
+                </p>
+                {girisHata && (
+                  <p className="flex items-start gap-2 text-sm font-semibold" style={{ color: "var(--hata)" }} role="alert">
+                    <Ikon ad="uyari" boyut={17} />
+                    <span>{girisHata}</span>
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-ana btn-buyuk w-full"
+                  disabled={talepGonderiliyor || yukleniyor}
+                  onClick={cihazTalebiGonder}
+                >
+                  {talepGonderiliyor ? "Gönderiliyor..." : "Bu telefonu tanımlat"}
+                </button>
+              </>
+            )}
+            <button type="button" className="btn btn-hayalet w-full" onClick={cihazKilidiVazgec}>
+              Vazgeç
+            </button>
           </div>
-          <div>
-            <label className="etiket" htmlFor="pin">
-              PIN
-            </label>
-            <div className="relative">
+        ) : (
+          <form onSubmit={girisYap} className="mt-8 space-y-4">
+            <div>
+              <label className="etiket" htmlFor="tc">
+                T.C. kimlik no
+              </label>
               <input
-                id="pin"
+                id="tc"
                 className="girdi sayi"
-                style={{ height: 52, fontSize: 18, paddingRight: 52 }}
-                type={pinGoster ? "text" : "password"}
+                style={{ height: 52, fontSize: 18 }}
                 inputMode="numeric"
-                maxLength={8}
-                autoComplete="current-password"
-                value={pinGiris}
-                onChange={(e) => setPinGiris(e.target.value.replace(/\D/g, ""))}
+                maxLength={11}
+                autoComplete="username"
+                value={tcGiris}
+                onChange={(e) => setTcGiris(e.target.value.replace(/\D/g, ""))}
               />
-              <button
-                type="button"
-                onClick={() => setPinGoster(!pinGoster)}
-                className="btn btn-hayalet btn-ikon absolute right-1.5 top-1/2 -translate-y-1/2"
-                aria-label={pinGoster ? "PIN'i gizle" : "PIN'i göster"}
-              >
-                <Ikon ad={pinGoster ? "gozkapali" : "goz"} />
-              </button>
             </div>
-          </div>
+            <div>
+              <label className="etiket" htmlFor="pin">
+                PIN
+              </label>
+              <div className="relative">
+                <input
+                  id="pin"
+                  className="girdi sayi"
+                  style={{ height: 52, fontSize: 18, paddingRight: 52 }}
+                  type={pinGoster ? "text" : "password"}
+                  inputMode="numeric"
+                  maxLength={8}
+                  autoComplete="current-password"
+                  value={pinGiris}
+                  onChange={(e) => setPinGiris(e.target.value.replace(/\D/g, ""))}
+                />
+                <button
+                  type="button"
+                  onClick={() => setPinGoster(!pinGoster)}
+                  className="btn btn-hayalet btn-ikon absolute right-1.5 top-1/2 -translate-y-1/2"
+                  aria-label={pinGoster ? "PIN'i gizle" : "PIN'i göster"}
+                >
+                  <Ikon ad={pinGoster ? "gozkapali" : "goz"} />
+                </button>
+              </div>
+            </div>
 
-          {girisHata && (
-            <p className="flex items-start gap-2 text-sm font-semibold" style={{ color: "var(--hata)" }} role="alert">
-              <Ikon ad="uyari" boyut={17} />
-              <span>{girisHata}</span>
-            </p>
-          )}
+            {girisHata && (
+              <p className="flex items-start gap-2 text-sm font-semibold" style={{ color: "var(--hata)" }} role="alert">
+                <Ikon ad="uyari" boyut={17} />
+                <span>{girisHata}</span>
+              </p>
+            )}
 
-          <button
-            type="submit"
-            className="btn btn-ana btn-buyuk w-full"
-            disabled={yukleniyor || tcGiris.length !== 11 || pinGiris.length < 4}
-          >
-            {yukleniyor ? "Doğrulanıyor..." : "Giriş yap"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              className="btn btn-ana btn-buyuk w-full"
+              disabled={yukleniyor || tcGiris.length !== 11 || pinGiris.length < 4}
+            >
+              {yukleniyor ? "Doğrulanıyor..." : "Giriş yap"}
+            </button>
+          </form>
+        )}
+
+        {iosTarayici && !cihazKilidi && (
+          <p className="panel-ic m2 mt-6 flex items-start gap-3 p-4 text-sm">
+            <Ikon ad="bilgi" className="m2" />
+            <span>
+              iPhone&apos;da Safari ile ana ekrana eklenen uygulama ayrı telefon sayılır. Hep aynı yerden, tercihen ana
+              ekrandaki uygulamadan giriş yapın.
+            </span>
+          </p>
+        )}
 
         <p className="m3 mt-auto pt-10 text-center text-sm">
           Yönetici misiniz?{" "}

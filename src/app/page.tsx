@@ -19,6 +19,7 @@ import {
   type Vardiya,
   type IzinBakiyesi,
   type MesaiTalebi,
+  type CihazTalebi,
   type Yetki,
   type YoneticiBilgisi,
 } from "../lib/tipler";
@@ -39,6 +40,7 @@ import PanelKullanicilari from "../components/panel/PanelKullanicilari";
 import IslemGecmisi from "../components/panel/IslemGecmisi";
 import AyarlarSekmesi from "../components/panel/AyarlarSekmesi";
 import MesaiSekmesi from "../components/panel/MesaiSekmesi";
+import CihazTalepleriSekmesi from "../components/panel/CihazTalepleriSekmesi";
 import BildirimDugmesi from "../components/BildirimDugmesi";
 import { olayBildir } from "../lib/bildirim";
 import {
@@ -330,7 +332,7 @@ function DikkatListesi({
       eylem: onCikisEksik,
     });
   if (bekleyen > 0)
-    maddeler.push({ ikon: "talepler", metin: `${bekleyen} izin talebi onayınızı bekliyor`, etiket: "İncele", eylem: () => onGit("talepler") });
+    maddeler.push({ ikon: "talepler", metin: `${bekleyen} talep onayınızı bekliyor`, etiket: "İncele", eylem: () => onGit("talepler") });
   if (pinsiz > 0)
     maddeler.push({
       ikon: "anahtar",
@@ -418,7 +420,7 @@ async function paneliGetir(seciliAy: string) {
 
   const ayIlk = `${seciliAy}-01`;
   const aySon = gunEkle(`${gunEkle(`${seciliAy}-28`, 7).slice(0, 7)}-01`, -1);
-  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD, ayarD, bakiyeD, mesaiD] = await Promise.all([
+  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD, ayarD, bakiyeD, mesaiD, cihazD] = await Promise.all([
     supabase.from("subeler").select("*").order("created_at", { ascending: true }),
     supabase.from("vardiyalar").select("*").order("created_at", { ascending: true }),
     tumunuGetir<Personel>((a, b) =>
@@ -483,6 +485,14 @@ async function paneliGetir(seciliAy: string) {
         .order("id")
         .range(a, b)
     ).catch(() => [] as MesaiTalebi[]),
+    // Bekleyen yeni telefon talepleri (yalnızca "cihaz" yetkilisine görünür; tablo yoksa boş)
+    Promise.resolve(
+      supabase
+        .from("cihaz_talepleri")
+        .select("id, personel_id, cihaz_bilgisi, durum, created_at, personeller (ad, soyad, sicil_no, varsayilan_sube_id)")
+        .eq("durum", "BEKLEMEDE")
+        .order("created_at", { ascending: false })
+    ).catch(() => ({ data: null })),
   ]);
 
   if (subeD.error) throw subeD.error;
@@ -502,6 +512,7 @@ async function paneliGetir(seciliAy: string) {
     ayarlar: ayarlariTamamla(ayarD.data as Partial<Ayarlar> | null),
     bakiyeler: (bakiyeD.data ?? {}) as Record<string, IzinBakiyesi>,
     mesaiTalepleri: mesaiD,
+    cihazTalepleri: (cihazD.data ?? []) as unknown as CihazTalebi[],
   };
 }
 
@@ -541,6 +552,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [ayarlar, setAyarlar] = useState<Ayarlar>(VARSAYILAN_AYARLAR);
   const [bakiyeler, setBakiyeler] = useState<Record<string, IzinBakiyesi>>({});
   const [mesaiTalepleri, setMesaiTalepleri] = useState<MesaiTalebi[]>([]);
+  const [cihazTalepleri, setCihazTalepleri] = useState<CihazTalebi[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState<string | null>(null);
   // "İçeride" hesabındaki 18 saat sınırı için son veri çekme anı
@@ -551,7 +563,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [form, setForm] = useState<FormDurumu>(null);
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar">("plan");
-  const [talepGorunum, setTalepGorunum] = useState<"izin" | "mesai">("izin");
+  const [talepGorunum, setTalepGorunum] = useState<"izin" | "mesai" | "cihaz">("izin");
   const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
 
   // -------------------------------------------------------------------
@@ -574,6 +586,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           setAyarlar(v.ayarlar);
           setBakiyeler(v.bakiyeler);
           setMesaiTalepleri(v.mesaiTalepleri);
+          setCihazTalepleri(v.cihazTalepleri);
           setVeriZamani(Date.now());
           setHataMesaji(null);
         })
@@ -594,6 +607,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       setAyarlar,
       setBakiyeler,
       setMesaiTalepleri,
+      setCihazTalepleri,
       setVeriZamani,
       setHataMesaji,
       setYukleniyor,
@@ -649,7 +663,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   );
 
   const bekleyenMesai = mesaiTalepleri.filter((t) => t.durum === "BEKLEMEDE").length;
-  const bekleyenSayisi = izinler.filter((iz) => iz.durum === "BEKLEMEDE").length + bekleyenMesai;
+  const bekleyenCihaz = cihazTalepleri.length;
+  const bekleyenSayisi = izinler.filter((iz) => iz.durum === "BEKLEMEDE").length + bekleyenMesai + bekleyenCihaz;
 
   // Son CIKIS_EKSIK_GUN günün hareketleri, kişiye göre (eskiden yeniye)
   const kisiHareketleri = useMemo(() => {
@@ -1019,6 +1034,34 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
   }
 
+  async function cihazTalebiKarar(t: CihazTalebi, onay: boolean) {
+    const kisi = `${t.personeller?.ad ?? ""} ${t.personeller?.soyad ?? ""}`.trim();
+    const tamam = await onayla(
+      onay
+        ? {
+            baslik: "Yeni telefon tanımlansın mı?",
+            metin: `${kisi} bundan sonra yalnızca bu telefondan (${t.cihaz_bilgisi ?? "bilinmeyen telefon"}) giriş yapabilecek. Eski telefondaki oturumu kapanır.`,
+            onayEtiketi: "Onayla",
+          }
+        : {
+            baslik: "Talep reddedilsin mi?",
+            metin: `${kisi} yeni telefondan giriş yapamayacak; kayıtlı telefonu değişmez.`,
+            onayEtiketi: "Reddet",
+            tehlikeli: true,
+          }
+    );
+    if (!tamam) return;
+    try {
+      const { error } = await supabase.rpc("cihaz_talebi_karar", { p_talep_id: t.id, p_onay: onay });
+      if (error) throw error;
+      bildir(onay ? "Yeni telefon tanımlandı." : "Talep reddedildi.", "basari");
+      await yenile();
+    } catch (err) {
+      bildir(hataYaz(err), "hata");
+      await yenile();
+    }
+  }
+
   async function vardiyaSil(v: Vardiya) {
     const tamam = await onayla({
       baslik: `"${v.ad}" vardiyası silinsin mi?`,
@@ -1292,7 +1335,12 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
         {aktifSekme === "talepler" && (
           <div className="space-y-4">
-            <div className="segment" style={{ maxWidth: 360 }} role="tablist" aria-label="Talep türü">
+            <div
+              className={yetkili("cihaz") ? "segment segment-3" : "segment"}
+              style={{ maxWidth: yetkili("cihaz") ? 480 : 360 }}
+              role="tablist"
+              aria-label="Talep türü"
+            >
               <button
                 type="button"
                 role="tab"
@@ -1311,8 +1359,21 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               >
                 Fazla mesai{bekleyenMesai > 0 ? ` (${bekleyenMesai})` : ""}
               </button>
+              {yetkili("cihaz") && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={talepGorunum === "cihaz"}
+                  data-aktif={talepGorunum === "cihaz"}
+                  onClick={() => setTalepGorunum("cihaz")}
+                >
+                  Telefon{bekleyenCihaz > 0 ? ` (${bekleyenCihaz})` : ""}
+                </button>
+              )}
             </div>
-            {talepGorunum === "mesai" ? (
+            {talepGorunum === "cihaz" && yetkili("cihaz") ? (
+              <CihazTalepleriSekmesi talepler={cihazTalepleri} subeFiltre={seciliSubeFiltre} onKarar={cihazTalebiKarar} />
+            ) : talepGorunum === "mesai" ? (
               <MesaiSekmesi
                 talepler={mesaiTalepleri}
                 personeller={personeller}

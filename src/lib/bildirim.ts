@@ -2,6 +2,7 @@
 // Gönderim sunucuda yapılır (src/app/api/bildirim).
 
 import { temizle } from "./supabase";
+import { anaEkrandaMi, iosMu } from "./cihazKimligi";
 
 const ACIK_ANAHTAR = temizle(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
 
@@ -13,17 +14,6 @@ function base64UrlBayt(deger: string): Uint8Array<ArrayBuffer> {
   const sonuc = new Uint8Array(new ArrayBuffer(ham.length));
   for (let i = 0; i < ham.length; i++) sonuc[i] = ham.charCodeAt(i);
   return sonuc;
-}
-
-function iosMu(): boolean {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-}
-
-function anaEkrandaMi(): boolean {
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (navigator as unknown as { standalone?: boolean }).standalone === true
-  );
 }
 
 async function kayit(): Promise<ServiceWorkerRegistration | null> {

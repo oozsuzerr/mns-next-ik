@@ -8,6 +8,7 @@
 //   { olay: "plan", personel_idler, tarihler }        yönetici vardiya planını değiştirdi (Bearer)
 //   { olay: "mesai", token }                         personel mobilden fazla mesai bildirdi
 //   { olay: "mesai_sonuc", mesai_id }                yönetici fazla mesaiyi onayladı/reddetti (Bearer)
+//   { olay: "cihaz", talep_id, cihaz }               kilitli personel yeni telefon talebi gönderdi (oturumsuz)
 import { bildirimGonder, kullaniciIstemcisi, servisIstemcisi, sorumlular } from "../../../lib/sunucuBildirim";
 import { GUN_ADLARI, haftaGunu, kisaTarih, sureYaz, yerelTarih } from "../../../lib/tarih";
 import { gunEkle } from "../../../lib/vardiyaPlani";
@@ -97,6 +98,36 @@ export async function POST(istek: Request) {
           metin: `${p?.ad ?? ""} ${p?.soyad ?? ""}: ${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} (${sureYaz(t.sure_dk)})`,
           adres: "/",
           etiket: "mesai",
+        }
+      );
+      return yanit(200, { gonderilen });
+    }
+
+    // ------------------------------------------------------------ yeni telefon talebi
+    // Personelin oturumu yoktur (telefonu kilitli); talep no + cihaz kimliği yalnızca talebi gönderen telefonda bulunur
+    if (govde.olay === "cihaz") {
+      const talepId = typeof govde.talep_id === "string" ? govde.talep_id : "";
+      const cihaz = typeof govde.cihaz === "string" ? govde.cihaz : "";
+      if (!/^[0-9a-f-]{36}$/i.test(talepId) || !cihaz) return yanit(400, { hata: "GOVDE_GECERSIZ" });
+      const { data: t } = await servis
+        .from("cihaz_talepleri")
+        .select("cihaz_bilgisi, personeller (ad, soyad, varsayilan_sube_id)")
+        .eq("id", talepId)
+        .eq("cihaz_id", cihaz)
+        .eq("durum", "BEKLEMEDE")
+        .gte("created_at", new Date(Date.now() - 3 * 60 * 1000).toISOString())
+        .maybeSingle();
+      if (!t) return yanit(200, { gonderilen: 0 });
+      const p = t.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null } | null;
+      const alicilar = await sorumlular(servis, p?.varsayilan_sube_id ?? null, "cihaz");
+      const gonderilen = await bildirimGonder(
+        servis,
+        { kullanicilar: alicilar },
+        {
+          baslik: "Yeni telefon onayı bekleniyor",
+          metin: `${p?.ad ?? ""} ${p?.soyad ?? ""} yeni bir telefondan giriş yapmak istiyor${t.cihaz_bilgisi ? ` (${t.cihaz_bilgisi})` : ""}.`,
+          adres: "/",
+          etiket: "cihaz",
         }
       );
       return yanit(200, { gonderilen });

@@ -34,6 +34,7 @@ const TABLOLAR: Record<string, string> = {
   yoneticiler: "Panel kullanıcısı",
   yonetici_subeleri: "Müdür şubesi",
   ay_kilitleri: "Ay kilidi",
+  cihaz_talepleri: "Telefon talebi",
 };
 
 const ALANLAR: Record<string, string> = {
@@ -48,6 +49,7 @@ const ALANLAR: Record<string, string> = {
   bitis_tarihi: "Bitiş",
   izin_turu: "İzin türü",
   cihaz_id: "Cihaz",
+  cihaz_bilgisi: "Telefon",
   pin: "PIN",
   rol: "Rol",
   yetkiler: "Yetkiler",
@@ -80,7 +82,11 @@ function ozet(k: Kayit): string {
   if (k.tablo === "personeller" && k.islem === "UPDATE") {
     if ("pin" in y) return "PIN'i değiştirdi";
     if ("cihaz_id" in y && !y.cihaz_id) return "cihaz kilidini açtı";
+    if ("cihaz_id" in y) return "yeni telefonu tanımladı";
     if ("aktif" in y) return y.aktif ? "personeli aktif etti" : "personeli pasife aldı";
+  }
+  if (k.tablo === "cihaz_talepleri" && k.islem === "UPDATE" && "durum" in y) {
+    return y.durum === "ONAYLANDI" ? "yeni telefon talebini onayladı" : "yeni telefon talebini reddetti";
   }
   if (k.tablo === "izinler" && k.islem === "UPDATE" && "durum" in y) {
     return y.durum === "ONAYLANDI" ? "izni onayladı" : y.durum === "REDDEDILDI" ? "izni reddetti" : "izin durumunu değiştirdi";
