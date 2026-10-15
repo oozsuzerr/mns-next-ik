@@ -72,6 +72,8 @@ export interface Izin {
   bitis_saat?: string | null;
   /** İzinden düşülen gün (iş günü; saatlikte kesirli) */
   gun_sayisi?: number | null;
+  /** Amirin karar açıklaması (ör. red gerekçesi) */
+  karar_notu?: string | null;
   aciklama: string | null;
   durum?: string;
   personeller?: { ad: string; soyad: string; sicil_no: string } | null;
@@ -88,6 +90,8 @@ export interface MesaiTalebi {
   neden: string;
   durum: "BEKLEMEDE" | "ONAYLANDI" | "REDDEDILDI";
   karar_zamani?: string | null;
+  /** Amirin karar açıklaması (ör. red gerekçesi) */
+  karar_notu?: string | null;
   created_at: string;
   personeller?: { ad: string; soyad: string; sicil_no: string; varsayilan_sube_id: string | null } | null;
 }

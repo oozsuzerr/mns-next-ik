@@ -114,7 +114,7 @@ export async function POST(istek: Request) {
       // Kullanıcının kendi yetkisiyle okunur: göremediği talep için bildirim gönderemez
       const { data: iz } = await kullanici
         .from("izinler")
-        .select("personel_id, izin_turu, durum, baslangic_tarihi, bitis_tarihi, baslangic_saat, bitis_saat")
+        .select("personel_id, izin_turu, durum, baslangic_tarihi, bitis_tarihi, baslangic_saat, bitis_saat, karar_notu")
         .eq("id", String(govde.izin_id ?? ""))
         .maybeSingle();
       if (!iz || (iz.durum !== "ONAYLANDI" && iz.durum !== "REDDEDILDI")) return yanit(200, { gonderilen: 0 });
@@ -124,7 +124,7 @@ export async function POST(istek: Request) {
         { personeller: [iz.personel_id] },
         {
           baslik: onay ? "İzin talebiniz onaylandı" : "İzin talebiniz reddedildi",
-          metin: `${iz.izin_turu}, ${aralikMetni(iz)}`,
+          metin: `${iz.izin_turu}, ${aralikMetni(iz)}${iz.karar_notu ? `. Amir: ${iz.karar_notu}` : ""}`,
           adres: "/mobil",
           etiket: "talep-sonuc",
         }
@@ -138,7 +138,7 @@ export async function POST(istek: Request) {
       if (yetkili !== true) return yanit(403, { hata: "YETKISIZ" });
       const { data: t } = await kullanici
         .from("mesai_talepleri")
-        .select("personel_id, durum, tarih, baslangic_saat, bitis_saat, sure_dk")
+        .select("personel_id, durum, tarih, baslangic_saat, bitis_saat, sure_dk, karar_notu")
         .eq("id", String(govde.mesai_id ?? ""))
         .maybeSingle();
       if (!t || (t.durum !== "ONAYLANDI" && t.durum !== "REDDEDILDI")) return yanit(200, { gonderilen: 0 });
@@ -148,7 +148,7 @@ export async function POST(istek: Request) {
         { personeller: [t.personel_id] },
         {
           baslik: onay ? "Fazla mesainiz onaylandı" : "Fazla mesainiz reddedildi",
-          metin: `${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} (${sureYaz(t.sure_dk)})`,
+          metin: `${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} (${sureYaz(t.sure_dk)})${t.karar_notu ? `. Amir: ${t.karar_notu}` : ""}`,
           adres: "/mobil",
           etiket: "mesai-sonuc",
         }

@@ -64,6 +64,7 @@ function TalepSatiri({
           )}
           {iz.aciklama && <p className="m2 mt-1.5 text-sm">{iz.aciklama}</p>}
           {iz.sgk_kodu && <p className="m3 mt-0.5 text-xs">SGK: {iz.sgk_kodu}</p>}
+          {iz.karar_notu && <p className="m2 mt-1 text-xs">Amir açıklaması: {iz.karar_notu}</p>}
         </div>
       </div>
 

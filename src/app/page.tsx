@@ -23,7 +23,7 @@ import {
   type YoneticiBilgisi,
 } from "../lib/tipler";
 import { ayarlariTamamla, DK_MS, VARSAYILAN_AYARLAR, type Ayarlar } from "../lib/ayarlar";
-import { ayAdi, ayAraligi, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
+import { ayAdi, ayAraligi, kisaTarih, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
 import { cikisiEksikGirisler, suankiGiris } from "../lib/mesai";
 import { gunEkle, gunPlani, planHaritasi, vardiyaCozucu, type PlanSatiri } from "../lib/vardiyaPlani";
 import { AcilirMenu, Bos, Ikon, Marka, useBildirim, type IkonAdi } from "../components/ui";
@@ -43,6 +43,7 @@ import BildirimDugmesi from "../components/BildirimDugmesi";
 import { olayBildir } from "../lib/bildirim";
 import {
   CikisEksikListesi,
+  RedFormu,
   GelmeyenlerListesi,
   IzinBilgileriFormu,
   IzinFormu,
@@ -395,6 +396,7 @@ type FormDurumu =
   | { tur: "gelmeyen" }
   | { tur: "cikisEksik" }
   | { tur: "izinBilgi"; hedef: Personel }
+  | { tur: "red"; talep: "izin" | "mesai"; id: string; ozet: string }
   | null;
 
 /** Çıkışı eksik girişler bu kadar gün geriye kadar aranır */
@@ -932,9 +934,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
   }
 
-  async function izinDurumGuncelle(id: string, yeniDurum: "ONAYLANDI" | "REDDEDILDI") {
+  async function izinDurumGuncelle(id: string, yeniDurum: "ONAYLANDI" | "REDDEDILDI", not: string | null = null) {
     try {
-      const { error } = await supabase.from("izinler").update({ durum: yeniDurum }).eq("id", id);
+      const { error } = await supabase.from("izinler").update({ durum: yeniDurum, karar_notu: not }).eq("id", id);
       if (error) throw error;
       bildir(yeniDurum === "ONAYLANDI" ? "Talep onaylandı." : "Talep reddedildi.", "basari");
       // Personelin telefonuna sonucu bildir
@@ -946,9 +948,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
   }
 
-  async function mesaiDurumGuncelle(id: string, yeniDurum: "ONAYLANDI" | "REDDEDILDI") {
+  async function mesaiDurumGuncelle(id: string, yeniDurum: "ONAYLANDI" | "REDDEDILDI", not: string | null = null) {
     try {
-      const { error } = await supabase.from("mesai_talepleri").update({ durum: yeniDurum }).eq("id", id);
+      const { error } = await supabase.from("mesai_talepleri").update({ durum: yeniDurum, karar_notu: not }).eq("id", id);
       if (error) throw error;
       bildir(yeniDurum === "ONAYLANDI" ? "Fazla mesai onaylandı." : "Fazla mesai reddedildi.", "basari");
       // Personelin telefonuna sonucu bildir
@@ -1316,13 +1318,43 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 seciliAy={seciliAy}
                 subeFiltre={seciliSubeFiltre}
                 onAyDegis={ayDegistir}
-                onDurum={yetkili("mesai") ? mesaiDurumGuncelle : undefined}
+                onDurum={
+                  yetkili("mesai")
+                    ? (id, durum) => {
+                        if (durum === "ONAYLANDI") return mesaiDurumGuncelle(id, durum);
+                        const t = mesaiTalepleri.find((x) => x.id === id);
+                        setForm({
+                          tur: "red",
+                          talep: "mesai",
+                          id,
+                          ozet: t
+                            ? `${t.personeller?.ad ?? ""} ${t.personeller?.soyad ?? ""}, ${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} fazla mesai`
+                            : "Fazla mesai talebi",
+                        });
+                      }
+                    : undefined
+                }
               />
             ) : (
               <TaleplerSekmesi
                 izinler={izinler}
                 bakiyeler={bakiyeler}
-                onDurum={yetkili("izin") ? izinDurumGuncelle : undefined}
+                onDurum={
+                  yetkili("izin")
+                    ? (id, durum) => {
+                        if (durum === "ONAYLANDI") return izinDurumGuncelle(id, durum);
+                        const iz = izinler.find((x) => x.id === id);
+                        setForm({
+                          tur: "red",
+                          talep: "izin",
+                          id,
+                          ozet: iz
+                            ? `${iz.personeller?.ad ?? ""} ${iz.personeller?.soyad ?? ""}, ${iz.izin_turu}, ${kisaTarih(iz.baslangic_tarihi)}`
+                            : "İzin talebi",
+                        });
+                      }
+                    : undefined
+                }
                 onSil={yetkili("izin") ? izinSil : undefined}
                 onYeni={yetkili("izin") ? () => setForm({ tur: "izin" }) : undefined}
               />
@@ -1492,6 +1524,18 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         />
       )}
       {form?.tur === "gelmeyen" && <GelmeyenlerListesi liste={bugunOzet.gelmedi} onKapat={() => setForm(null)} />}
+      {form?.tur === "red" && (
+        <RedFormu
+          baslik={form.talep === "mesai" ? "Fazla mesai reddedilsin mi?" : "İzin talebi reddedilsin mi?"}
+          ozet={form.ozet}
+          onKapat={() => setForm(null)}
+          onReddet={(not) =>
+            form.talep === "mesai"
+              ? mesaiDurumGuncelle(form.id, "REDDEDILDI", not)
+              : izinDurumGuncelle(form.id, "REDDEDILDI", not)
+          }
+        />
+      )}
       {form?.tur === "cikisEksik" && (
         <CikisEksikListesi
           liste={cikisEksikler}

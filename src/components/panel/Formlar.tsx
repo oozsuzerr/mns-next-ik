@@ -930,3 +930,60 @@ export function IzinBilgileriFormu({
     </Modal>
   );
 }
+
+// ---------------------------------------------------------------------
+// Talep reddi: isteğe bağlı açıklama
+// ---------------------------------------------------------------------
+export function RedFormu({
+  baslik,
+  ozet,
+  onKapat,
+  onReddet,
+}: {
+  baslik: string;
+  /** Reddedilen talebin kısa özeti (kişi, tarih) */
+  ozet: string;
+  onKapat: () => void;
+  onReddet: (not: string | null) => Promise<void>;
+}) {
+  const [not, setNot] = useState("");
+  const [yukleniyor, setYukleniyor] = useState(false);
+
+  async function gonder(e: FormEvent) {
+    e.preventDefault();
+    setYukleniyor(true);
+    try {
+      await onReddet(not.trim() || null);
+      onKapat();
+    } finally {
+      setYukleniyor(false);
+    }
+  }
+
+  return (
+    <Modal onKapat={onKapat} baslik={baslik}>
+      <form onSubmit={gonder} className="space-y-4">
+        <p className="m2 text-sm">{ozet}</p>
+        <Alan etiket="Açıklama (isteğe bağlı)" ipucu="Personelin telefonunda talebin altında ve bildirimde görünür.">
+          <textarea
+            className="girdi"
+            rows={3}
+            maxLength={300}
+            autoFocus
+            placeholder="Örn: O gün planlı mesai yoktu, lütfen amirinizle görüşün."
+            value={not}
+            onChange={(e) => setNot(e.target.value)}
+          />
+        </Alan>
+        <div className="flex justify-end gap-2 pt-1">
+          <button type="button" className="btn btn-ikincil" onClick={onKapat} disabled={yukleniyor}>
+            Vazgeç
+          </button>
+          <button type="submit" className="btn btn-tehlike" disabled={yukleniyor}>
+            {yukleniyor ? "Reddediliyor..." : "Reddet"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

@@ -50,6 +50,7 @@ interface Talep {
   bitis_saat: string | null;
   gun_sayisi: number | null;
   durum: string | null;
+  karar_notu?: string | null;
 }
 
 /** Personelin kendi fazla mesai talepleri (mobil_ozet) */
@@ -61,6 +62,7 @@ interface MesaiTalep {
   sure_dk: number;
   neden: string;
   durum: string;
+  karar_notu?: string | null;
 }
 
 /** "17:00" - "19:30" arası dakika; bitiş küçükse gece yarısını geçmiştir */
@@ -908,6 +910,11 @@ function MobilGirisEkrani() {
                   <span className="m3 block truncate text-xs">
                     {t.baslangic_saat.slice(0, 5)}-{t.bitis_saat.slice(0, 5)} · {t.neden}
                   </span>
+                  {t.karar_notu && (
+                    <span className="mt-0.5 block text-xs" style={{ color: t.durum === "REDDEDILDI" ? "var(--hata)" : undefined }}>
+                      Amir: {t.karar_notu}
+                    </span>
+                  )}
                 </span>
                 <span
                   className={`rozet ${
@@ -938,6 +945,11 @@ function MobilGirisEkrani() {
                       ? kisaTarih(t.baslangic_tarihi)
                       : `${kisaTarih(t.baslangic_tarihi)} - ${kisaTarih(t.bitis_tarihi)}`}
                   </span>
+                  {t.karar_notu && (
+                    <span className="mt-0.5 block text-xs" style={{ color: t.durum === "REDDEDILDI" ? "var(--hata)" : undefined }}>
+                      Amir: {t.karar_notu}
+                    </span>
+                  )}
                 </span>
                 <span
                   className={`rozet ${
