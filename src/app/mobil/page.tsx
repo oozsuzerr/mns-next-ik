@@ -52,6 +52,26 @@ interface Talep {
   durum: string | null;
 }
 
+/** Personelin kendi fazla mesai talepleri (mobil_ozet) */
+interface MesaiTalep {
+  id: string;
+  tarih: string;
+  baslangic_saat: string;
+  bitis_saat: string;
+  sure_dk: number;
+  neden: string;
+  durum: string;
+}
+
+/** "17:00" - "19:30" arası dakika; bitiş küçükse gece yarısını geçmiştir */
+function mesaiDakika(bas: string, bit: string): number {
+  const [bs, bd] = bas.split(":").map(Number);
+  const [es, ed] = bit.split(":").map(Number);
+  let dk = es * 60 + ed - (bs * 60 + bd);
+  if (dk <= 0) dk += 1440;
+  return dk;
+}
+
 interface Hareket {
   id: string;
   islem_turu: string;
@@ -117,6 +137,14 @@ function hataMetni(kod: string | undefined, veri?: Record<string, unknown>): str
       return "Sistemde tanımlı şube bulunamadı.";
     case "KONUM_GECERSIZ":
       return "Konum alınamadı. GPS iznini kontrol edin.";
+    case "SURE_GECERSIZ":
+      return "Mesai süresi en az 15 dakika, en çok 16 saat olabilir.";
+    case "NEDEN_GEREKLI":
+      return "Lütfen fazla mesainin nedenini yazın.";
+    case "CAKISMA":
+      return "Bu saatlere denk gelen bir fazla mesai talebiniz zaten var.";
+    case "AY_KILITLI":
+      return "Bu ayın puantajı kapatılmış; yöneticinize başvurun.";
     case "SAAT_GECERSIZ":
       return "Saat aralığı geçersiz. Bitiş saati başlangıçtan sonra olmalı.";
     case "TARIH_GECERSIZ":
@@ -232,6 +260,10 @@ function MobilGirisEkrani() {
   const [mobilAyar, setMobilAyar] = useState<{ cikis_tolerans_dk: number; erken_giris_payi_dk: number } | null>(null);
   const [yillikIzin, setYillikIzin] = useState<IzinBakiyesi | null>(null);
   const [talepler, setTalepler] = useState<Talep[] | null>(null);
+  const [mesaiTalepleri, setMesaiTalepleri] = useState<MesaiTalep[] | null>(null);
+  const [mesaiAcik, setMesaiAcik] = useState(false);
+  const [mesaiYukleniyor, setMesaiYukleniyor] = useState(false);
+  const [mesai, setMesai] = useState({ tarih: "", baslangic_saat: "17:00", bitis_saat: "19:00", neden: "" });
 
   const oturumuTemizle = useCallback(() => {
     localStorage.removeItem(TOKEN_ANAHTAR);
@@ -245,6 +277,7 @@ function MobilGirisEkrani() {
     setMobilAyar(null);
     setYillikIzin(null);
     setTalepler(null);
+    setMesaiTalepleri(null);
   }, []);
 
   const ozetYukle = useCallback(
@@ -268,6 +301,7 @@ function MobilGirisEkrani() {
       setMobilAyar(data.ayarlar ?? null);
       setYillikIzin(data.yillik_izin ?? null);
       setTalepler(data.talepler ?? null);
+      setMesaiTalepleri(data.mesai_talepleri ?? null);
       return true;
     },
     [oturumuTemizle]
@@ -471,6 +505,40 @@ function MobilGirisEkrani() {
       setMesaj("Kayıt yapılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.");
     } finally {
       setYukleniyor(false);
+    }
+  }
+
+  async function mesaiGonder(e: FormEvent) {
+    e.preventDefault();
+    if (!token) return;
+    if (mesai.neden.trim().length < 3) {
+      bildir(hataMetni("NEDEN_GEREKLI"), "hata");
+      return;
+    }
+    setMesaiYukleniyor(true);
+    try {
+      const { data, error } = await supabase.rpc("mesai_talep_olustur", {
+        p_token: token,
+        p_tarih: mesai.tarih,
+        p_baslangic_saat: mesai.baslangic_saat,
+        p_bitis_saat: mesai.bitis_saat,
+        p_neden: mesai.neden.trim(),
+      });
+      if (error) throw error;
+      if (!data?.ok) {
+        bildir(hataMetni(data?.hata), "hata");
+        return;
+      }
+      bildir("Fazla mesainiz yöneticinizin onayına gönderildi.", "basari");
+      // Yöneticinin telefonuna haber ver
+      olayBildir({ olay: "mesai", token });
+      setMesaiAcik(false);
+      setMesai({ ...mesai, neden: "" });
+      await ozetYukle(token);
+    } catch {
+      bildir("Talep gönderilemedi. Lütfen tekrar deneyin.", "hata");
+    } finally {
+      setMesaiYukleniyor(false);
     }
   }
 
@@ -805,6 +873,55 @@ function MobilGirisEkrani() {
         <Ikon ad="sag" className="m3" />
       </button>
 
+      {/* Fazla mesai bildir (mobil_ozet destekliyorsa) */}
+      {mesaiTalepleri && (
+        <button
+          type="button"
+          onClick={() => {
+            setMesai({ ...mesai, tarih: mesai.tarih || yerelTarih() });
+            setMesaiAcik(true);
+          }}
+          className="panel flex w-full items-center gap-3 p-4 text-left"
+        >
+          <span className="bos-ikon flex h-10 w-10 items-center justify-center rounded-full">
+            <Ikon ad="ay" />
+          </span>
+          <span className="flex-1">
+            <span className="m1 block font-semibold">Fazla mesai bildir</span>
+            <span className="m3 block text-xs">Mesaiye kaldığınız saatleri girin, yöneticinizin onayına gider.</span>
+          </span>
+          <Ikon ad="sag" className="m3" />
+        </button>
+      )}
+
+      {/* Mesai taleplerim */}
+      {mesaiTalepleri && mesaiTalepleri.length > 0 && (
+        <section>
+          <h2 className="baslik-font m1 mb-2 px-1 text-lg">Fazla mesailerim</h2>
+          <ul className="panel liste overflow-hidden">
+            {mesaiTalepleri.slice(0, 5).map((t) => (
+              <li key={t.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="min-w-0 flex-1">
+                  <span className="m1 block text-sm font-semibold">
+                    {kisaTarih(t.tarih)}, {sureYaz(t.sure_dk)}
+                  </span>
+                  <span className="m3 block truncate text-xs">
+                    {t.baslangic_saat.slice(0, 5)}-{t.bitis_saat.slice(0, 5)} · {t.neden}
+                  </span>
+                </span>
+                <span
+                  className={`rozet ${
+                    t.durum === "ONAYLANDI" ? "rozet-giris" : t.durum === "REDDEDILDI" ? "rozet-hata" : "rozet-uyari"
+                  }`}
+                >
+                  {t.durum === "ONAYLANDI" ? "Onaylandı" : t.durum === "REDDEDILDI" ? "Reddedildi" : "Bekliyor"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {/* Taleplerim */}
       {talepler && talepler.length > 0 && (
         <section>
@@ -876,6 +993,71 @@ function MobilGirisEkrani() {
             <Ikon ad="kapat" boyut={15} />
           </button>
         </div>
+      )}
+
+      {/* Fazla mesai penceresi */}
+      {mesaiAcik && (
+        <Modal onKapat={() => setMesaiAcik(false)} baslik="Fazla mesai bildir">
+          <form onSubmit={mesaiGonder} className="space-y-4">
+            <div>
+              <label className="etiket">Tarih</label>
+              <input
+                className="girdi sayi"
+                type="date"
+                required
+                max={yerelTarih()}
+                value={mesai.tarih}
+                onChange={(e) => setMesai({ ...mesai, tarih: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="etiket">Başlangıç</label>
+                <input
+                  className="girdi sayi"
+                  type="time"
+                  required
+                  value={mesai.baslangic_saat}
+                  onChange={(e) => setMesai({ ...mesai, baslangic_saat: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="etiket">Bitiş</label>
+                <input
+                  className="girdi sayi"
+                  type="time"
+                  required
+                  value={mesai.bitis_saat}
+                  onChange={(e) => setMesai({ ...mesai, bitis_saat: e.target.value })}
+                />
+              </div>
+            </div>
+            <p className="m2 text-sm">
+              Süre: <strong className="m1">{sureYaz(mesaiDakika(mesai.baslangic_saat, mesai.bitis_saat))}</strong>
+              {mesai.bitis_saat <= mesai.baslangic_saat ? " (gece yarısını geçiyor, ertesi gün biter)" : ""}
+            </p>
+            <div>
+              <label className="etiket">Nedeni</label>
+              <textarea
+                className="girdi"
+                rows={3}
+                required
+                maxLength={300}
+                placeholder="Örn: Ay sonu sayımı için kaldım"
+                value={mesai.neden}
+                onChange={(e) => setMesai({ ...mesai, neden: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" className="btn btn-ikincil flex-1" onClick={() => setMesaiAcik(false)}>
+                Vazgeç
+              </button>
+              <button type="submit" className="btn btn-ana flex-1" disabled={mesaiYukleniyor}>
+                {mesaiYukleniyor ? "Gönderiliyor..." : "Onaya gönder"}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
 
       {/* İzin talebi penceresi */}

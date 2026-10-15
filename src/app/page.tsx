@@ -18,6 +18,7 @@ import {
   type Sube,
   type Vardiya,
   type IzinBakiyesi,
+  type MesaiTalebi,
   type Yetki,
   type YoneticiBilgisi,
 } from "../lib/tipler";
@@ -37,6 +38,7 @@ import VardiyaPlani from "../components/panel/VardiyaPlani";
 import PanelKullanicilari from "../components/panel/PanelKullanicilari";
 import IslemGecmisi from "../components/panel/IslemGecmisi";
 import AyarlarSekmesi from "../components/panel/AyarlarSekmesi";
+import MesaiSekmesi from "../components/panel/MesaiSekmesi";
 import BildirimDugmesi from "../components/BildirimDugmesi";
 import { olayBildir } from "../lib/bildirim";
 import {
@@ -412,7 +414,9 @@ async function paneliGetir(seciliAy: string) {
   const planBas = [yerelTarih(aralikBas), gunEkle(bugun, -CIKIS_EKSIK_GUN - 1)].sort()[0];
   const planSon = [yerelTarih(aralikSon), gunEkle(bugun, 1)].sort()[1];
 
-  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD, ayarD, bakiyeD] = await Promise.all([
+  const ayIlk = `${seciliAy}-01`;
+  const aySon = gunEkle(`${gunEkle(`${seciliAy}-28`, 7).slice(0, 7)}-01`, -1);
+  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD, ayarD, bakiyeD, mesaiD] = await Promise.all([
     supabase.from("subeler").select("*").order("created_at", { ascending: true }),
     supabase.from("vardiyalar").select("*").order("created_at", { ascending: true }),
     tumunuGetir<Personel>((a, b) =>
@@ -467,6 +471,16 @@ async function paneliGetir(seciliAy: string) {
     // Tolerans ayarları ve yıllık izin bakiyeleri (okunamazsa varsayılan / boş)
     Promise.resolve(supabase.from("sirket_ayarlari").select("*").maybeSingle()).catch(() => ({ data: null })),
     Promise.resolve(supabase.rpc("izin_bakiyeleri")).catch(() => ({ data: null })),
+    // Fazla mesai: tüm bekleyenler ve seçili ayın kayıtları (tablo yoksa boş)
+    tumunuGetir<MesaiTalebi>((a, b) =>
+      supabase
+        .from("mesai_talepleri")
+        .select("*, personeller (ad, soyad, sicil_no, varsayilan_sube_id)")
+        .or(`durum.eq.BEKLEMEDE,and(tarih.gte.${ayIlk},tarih.lte.${aySon})`)
+        .order("tarih", { ascending: false })
+        .order("id")
+        .range(a, b)
+    ).catch(() => [] as MesaiTalebi[]),
   ]);
 
   if (subeD.error) throw subeD.error;
@@ -485,6 +499,7 @@ async function paneliGetir(seciliAy: string) {
     kilitliAylar: ((kilitD.data ?? []) as { ay: string }[]).map((k) => k.ay),
     ayarlar: ayarlariTamamla(ayarD.data as Partial<Ayarlar> | null),
     bakiyeler: (bakiyeD.data ?? {}) as Record<string, IzinBakiyesi>,
+    mesaiTalepleri: mesaiD,
   };
 }
 
@@ -523,6 +538,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [kilitliAylar, setKilitliAylar] = useState<string[]>([]);
   const [ayarlar, setAyarlar] = useState<Ayarlar>(VARSAYILAN_AYARLAR);
   const [bakiyeler, setBakiyeler] = useState<Record<string, IzinBakiyesi>>({});
+  const [mesaiTalepleri, setMesaiTalepleri] = useState<MesaiTalebi[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState<string | null>(null);
   // "İçeride" hesabındaki 18 saat sınırı için son veri çekme anı
@@ -533,6 +549,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [form, setForm] = useState<FormDurumu>(null);
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar">("plan");
+  const [talepGorunum, setTalepGorunum] = useState<"izin" | "mesai">("izin");
   const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
 
   // -------------------------------------------------------------------
@@ -554,6 +571,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           setKilitliAylar(v.kilitliAylar);
           setAyarlar(v.ayarlar);
           setBakiyeler(v.bakiyeler);
+          setMesaiTalepleri(v.mesaiTalepleri);
           setVeriZamani(Date.now());
           setHataMesaji(null);
         })
@@ -573,6 +591,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       setKilitliAylar,
       setAyarlar,
       setBakiyeler,
+      setMesaiTalepleri,
       setVeriZamani,
       setHataMesaji,
       setYukleniyor,
@@ -627,7 +646,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     (p) => seciliSubeFiltre === "TUMU" || p.subeId === seciliSubeFiltre
   );
 
-  const bekleyenSayisi = izinler.filter((iz) => iz.durum === "BEKLEMEDE").length;
+  const bekleyenMesai = mesaiTalepleri.filter((t) => t.durum === "BEKLEMEDE").length;
+  const bekleyenSayisi = izinler.filter((iz) => iz.durum === "BEKLEMEDE").length + bekleyenMesai;
 
   // Son CIKIS_EKSIK_GUN günün hareketleri, kişiye göre (eskiden yeniye)
   const kisiHareketleri = useMemo(() => {
@@ -781,6 +801,28 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       };
     }
 
+    if (aktifSekme === "talepler" && talepGorunum === "mesai") {
+      return {
+        baslik: `Fazla Mesai (${seciliAy})`,
+        dosyaAdi: `${ek}_FazlaMesai_${seciliAy}`,
+        veriler: mesaiTalepleri
+          .filter((t) => t.tarih.startsWith(seciliAy))
+          .filter((t) => seciliSubeFiltre === "TUMU" || t.personeller?.varsayilan_sube_id === seciliSubeFiltre)
+          .sort((a, b) => a.tarih.localeCompare(b.tarih))
+          .map((t, i) => ({
+            Sıra: i + 1,
+            "Sicil No": t.personeller?.sicil_no || "-",
+            "Ad Soyad": `${t.personeller?.ad || ""} ${t.personeller?.soyad || ""}`.trim(),
+            Tarih: t.tarih,
+            Başlangıç: t.baslangic_saat.slice(0, 5),
+            Bitiş: t.bitis_saat.slice(0, 5),
+            "Süre (dk)": t.sure_dk,
+            "Süre (saat)": Math.round((t.sure_dk / 60) * 100) / 100,
+            Neden: t.neden,
+            Durum: t.durum,
+          })),
+      };
+    }
     if (aktifSekme === "talepler") {
       return {
         baslik: "İzin ve Rapor Talepleri",
@@ -898,6 +940,20 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       // Personelin telefonuna sonucu bildir
       const { data } = await supabase.auth.getSession();
       olayBildir({ olay: "talep_sonuc", izin_id: id }, data.session?.access_token);
+      await yenile();
+    } catch (err) {
+      bildir(hataYaz(err), "hata");
+    }
+  }
+
+  async function mesaiDurumGuncelle(id: string, yeniDurum: "ONAYLANDI" | "REDDEDILDI") {
+    try {
+      const { error } = await supabase.from("mesai_talepleri").update({ durum: yeniDurum }).eq("id", id);
+      if (error) throw error;
+      bildir(yeniDurum === "ONAYLANDI" ? "Fazla mesai onaylandı." : "Fazla mesai reddedildi.", "basari");
+      // Personelin telefonuna sonucu bildir
+      const { data } = await supabase.auth.getSession();
+      olayBildir({ olay: "mesai_sonuc", mesai_id: id }, data.session?.access_token);
       await yenile();
     } catch (err) {
       bildir(hataYaz(err), "hata");
@@ -1231,13 +1287,47 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         )}
 
         {aktifSekme === "talepler" && (
-          <TaleplerSekmesi
-            izinler={izinler}
-            bakiyeler={bakiyeler}
-            onDurum={yetkili("izin") ? izinDurumGuncelle : undefined}
-            onSil={yetkili("izin") ? izinSil : undefined}
-            onYeni={yetkili("izin") ? () => setForm({ tur: "izin" }) : undefined}
-          />
+          <div className="space-y-4">
+            <div className="segment" style={{ maxWidth: 360 }} role="tablist" aria-label="Talep türü">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={talepGorunum === "izin"}
+                data-aktif={talepGorunum === "izin"}
+                onClick={() => setTalepGorunum("izin")}
+              >
+                İzin talepleri
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={talepGorunum === "mesai"}
+                data-aktif={talepGorunum === "mesai"}
+                onClick={() => setTalepGorunum("mesai")}
+              >
+                Fazla mesai{bekleyenMesai > 0 ? ` (${bekleyenMesai})` : ""}
+              </button>
+            </div>
+            {talepGorunum === "mesai" ? (
+              <MesaiSekmesi
+                talepler={mesaiTalepleri}
+                personeller={personeller}
+                hareketler={hareketler}
+                seciliAy={seciliAy}
+                subeFiltre={seciliSubeFiltre}
+                onAyDegis={ayDegistir}
+                onDurum={yetkili("mesai") ? mesaiDurumGuncelle : undefined}
+              />
+            ) : (
+              <TaleplerSekmesi
+                izinler={izinler}
+                bakiyeler={bakiyeler}
+                onDurum={yetkili("izin") ? izinDurumGuncelle : undefined}
+                onSil={yetkili("izin") ? izinSil : undefined}
+                onYeni={yetkili("izin") ? () => setForm({ tur: "izin" }) : undefined}
+              />
+            )}
+          </div>
         )}
 
         {aktifSekme === "genel" && (

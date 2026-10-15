@@ -77,6 +77,21 @@ export interface Izin {
   personeller?: { ad: string; soyad: string; sicil_no: string } | null;
 }
 
+/** Personelin bildirdiği fazla mesai (müdür onayına gider) */
+export interface MesaiTalebi {
+  id: string;
+  personel_id: string;
+  tarih: string;
+  baslangic_saat: string;
+  bitis_saat: string;
+  sure_dk: number;
+  neden: string;
+  durum: "BEKLEMEDE" | "ONAYLANDI" | "REDDEDILDI";
+  karar_zamani?: string | null;
+  created_at: string;
+  personeller?: { ad: string; soyad: string; sicil_no: string; varsayilan_sube_id: string | null } | null;
+}
+
 export interface ResmiTatil {
   id: string;
   tarih: string;
@@ -96,6 +111,7 @@ export interface YoneticiBilgisi {
 export const YETKILER = [
   { anahtar: "plan", ad: "Vardiya planı", aciklama: "Plan hazırlama ve değiştirme", varsayilan: true },
   { anahtar: "izin", ad: "İzin yönetimi", aciklama: "Talepleri onaylama/reddetme, izin ve rapor girme", varsayilan: true },
+  { anahtar: "mesai", ad: "Fazla mesai onayı", aciklama: "Personelin fazla mesai taleplerini onaylama/reddetme", varsayilan: true },
   { anahtar: "manuel", ad: "Manuel giriş/çıkış", aciklama: "Eksik çıkış ekleme, hareket düzeltme", varsayilan: true },
   { anahtar: "cihaz", ad: "Cihaz kilidi", aciklama: "Kayıtlı telefonu sıfırlama", varsayilan: true },
   { anahtar: "pin", ad: "PIN işlemleri", aciklama: "Personele PIN verme ve sıfırlama", varsayilan: false },

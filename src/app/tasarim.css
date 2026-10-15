@@ -1190,3 +1190,12 @@ textarea {
   border-color: transparent;
   background: transparent;
 }
+
+/* Çok satırlı metin kutusu (ör. fazla mesai nedeni) */
+textarea.girdi {
+  height: auto;
+  min-height: 84px;
+  padding: 10px 12px;
+  line-height: 1.45;
+  resize: vertical;
+}

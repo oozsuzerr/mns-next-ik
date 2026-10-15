@@ -6,8 +6,10 @@
 //   { olay: "talep", token }                         personel mobilden izin talebi gönderdi
 //   { olay: "talep_sonuc", izin_id }                 yönetici talebi onayladı/reddetti (Bearer)
 //   { olay: "plan", personel_idler, tarihler }        yönetici vardiya planını değiştirdi (Bearer)
+//   { olay: "mesai", token }                         personel mobilden fazla mesai bildirdi
+//   { olay: "mesai_sonuc", mesai_id }                yönetici fazla mesaiyi onayladı/reddetti (Bearer)
 import { bildirimGonder, kullaniciIstemcisi, servisIstemcisi, sorumlular } from "../../../lib/sunucuBildirim";
-import { GUN_ADLARI, haftaGunu, kisaTarih, yerelTarih } from "../../../lib/tarih";
+import { GUN_ADLARI, haftaGunu, kisaTarih, sureYaz, yerelTarih } from "../../../lib/tarih";
 import { gunEkle } from "../../../lib/vardiyaPlani";
 
 function yanit(durum: number, govde: Record<string, unknown>) {
@@ -70,6 +72,36 @@ export async function POST(istek: Request) {
       return yanit(200, { gonderilen });
     }
 
+    // ------------------------------------------------------------ personel fazla mesai talebi
+    if (govde.olay === "mesai") {
+      const token = typeof govde.token === "string" ? govde.token : "";
+      const { data: pid, error } = await servis.rpc("oturum_personel", { p_token: token });
+      if (error || !pid) return yanit(401, { hata: "OTURUM_GECERSIZ" });
+      const { data: t } = await servis
+        .from("mesai_talepleri")
+        .select("tarih, baslangic_saat, bitis_saat, sure_dk, personeller (ad, soyad, varsayilan_sube_id)")
+        .eq("personel_id", pid)
+        .eq("durum", "BEKLEMEDE")
+        .gte("created_at", new Date(Date.now() - 3 * 60 * 1000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!t) return yanit(200, { gonderilen: 0 });
+      const p = t.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null } | null;
+      const alicilar = await sorumlular(servis, p?.varsayilan_sube_id ?? null, "mesai");
+      const gonderilen = await bildirimGonder(
+        servis,
+        { kullanicilar: alicilar },
+        {
+          baslik: "Yeni fazla mesai talebi",
+          metin: `${p?.ad ?? ""} ${p?.soyad ?? ""}: ${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} (${sureYaz(t.sure_dk)})`,
+          adres: "/",
+          etiket: "mesai",
+        }
+      );
+      return yanit(200, { gonderilen });
+    }
+
     // Diğer olaylar panel kullanıcısının oturumuyla gelir
     const token = (istek.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
     if (!token) return yanit(401, { hata: "OTURUM_YOK" });
@@ -95,6 +127,30 @@ export async function POST(istek: Request) {
           metin: `${iz.izin_turu}, ${aralikMetni(iz)}`,
           adres: "/mobil",
           etiket: "talep-sonuc",
+        }
+      );
+      return yanit(200, { gonderilen });
+    }
+
+    // ------------------------------------------------------------ fazla mesai sonucu
+    if (govde.olay === "mesai_sonuc") {
+      const { data: yetkili } = await kullanici.rpc("yetkisi_var", { p_yetki: "mesai" });
+      if (yetkili !== true) return yanit(403, { hata: "YETKISIZ" });
+      const { data: t } = await kullanici
+        .from("mesai_talepleri")
+        .select("personel_id, durum, tarih, baslangic_saat, bitis_saat, sure_dk")
+        .eq("id", String(govde.mesai_id ?? ""))
+        .maybeSingle();
+      if (!t || (t.durum !== "ONAYLANDI" && t.durum !== "REDDEDILDI")) return yanit(200, { gonderilen: 0 });
+      const onay = t.durum === "ONAYLANDI";
+      const gonderilen = await bildirimGonder(
+        servis,
+        { personeller: [t.personel_id] },
+        {
+          baslik: onay ? "Fazla mesainiz onaylandı" : "Fazla mesainiz reddedildi",
+          metin: `${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} (${sureYaz(t.sure_dk)})`,
+          adres: "/mobil",
+          etiket: "mesai-sonuc",
         }
       );
       return yanit(200, { gonderilen });
