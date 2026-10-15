@@ -45,17 +45,25 @@ export function planlananBitis(giris: Date, vardiya: MesaiVardiya): Date {
   return bitis;
 }
 
+/**
+ * Kişinin vardiya bilgisi: sabit bir vardiya, ya da vardiya planı varsa
+ * girişin ait olduğu planlı vardiyanın bitişini (ms) bulan fonksiyon (eşleşme yoksa null).
+ */
+export type VardiyaBilgisi = MesaiVardiya | null | undefined | ((giris: Date) => number | null);
+
 /** Çıkış basılmadıysa kişinin en geç ne zamana kadar mesaide sayılacağı (ms) */
-export function mesaiSonSiniri(giris: Date, vardiya: MesaiVardiya | null | undefined): number {
+export function mesaiSonSiniri(giris: Date, vardiya: VardiyaBilgisi): number {
   const enGec = giris.getTime() + MAKS_VARDIYA_MS;
   if (!vardiya) return enGec;
-  return Math.min(planlananBitis(giris, vardiya).getTime() + CIKIS_TOLERANS_MS, enGec);
+  const bitis = typeof vardiya === "function" ? vardiya(giris) : planlananBitis(giris, vardiya).getTime();
+  if (bitis === null) return enGec;
+  return Math.min(bitis + CIKIS_TOLERANS_MS, enGec);
 }
 
 /** Son hareket giriş ise ve süresi dolmadıysa o girişin zamanı, değilse null */
 export function suankiGiris(
   hareketler: MesaiHareket[],
-  vardiya: MesaiVardiya | null | undefined,
+  vardiya: VardiyaBilgisi,
   simdi: number
 ): Date | null {
   let son: MesaiHareket | null = null;
@@ -74,7 +82,7 @@ export function suankiGiris(
  */
 export function cikisiEksikGirisler<T extends MesaiHareket>(
   hareketler: T[],
-  vardiya: MesaiVardiya | null | undefined,
+  vardiya: VardiyaBilgisi,
   simdi: number
 ): T[] {
   const sirali = [...hareketler].sort(

@@ -1,5 +1,6 @@
-import { ayGunSayisi, GUN_ADLARI, gunStr, haftaGunu, planAni, sureYaz, yerelSaat, yerelTarih } from "./tarih";
+import { ayGunSayisi, GUN_ADLARI, gunStr, haftaGunu, sureYaz, yerelSaat, yerelTarih } from "./tarih";
 import { MAKS_VARDIYA_MS, mesaiSonSiniri } from "./mesai";
+import { gunPlani, planHaritasi, vardiyaAni, vardiyaCozucu, type PlanSatiri } from "./vardiyaPlani";
 
 // ---------------------------------------------------------------------
 // Tipler
@@ -91,6 +92,8 @@ export interface PuantajGirdi {
   izinler: IzinT[];
   resmiTatiller: TatilT[];
   vardiyalar: VardiyaT[];
+  /** Vardiya planı (yoksa varsayılan vardiya ve Pazar tatili geçerli) */
+  planlar?: PlanSatiri[];
   /** Türkiye saatine göre bugün: "2026-10-13" */
   bugun: string;
   simdi: Date;
@@ -157,6 +160,9 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
   const gunSayisi = ayGunSayisi(g.yil, g.ay);
   const ayOnek = `${g.yil}-${String(g.ay).padStart(2, "0")}`;
   const tatilHaritasi = new Map<string, string>(g.resmiTatiller.map((t) => [t.tarih, t.ad]));
+  const planlar = planHaritasi(g.planlar ?? []);
+  const vardiyaHaritasi = new Map(g.vardiyalar.map((v) => [v.id, v]));
+  const vardiyaBul = (id: string) => vardiyaHaritasi.get(id);
 
   const hareketlerPersonele = new Map<string, HareketT[]>();
   for (const h of g.hareketler) {
@@ -176,10 +182,16 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
     const ham = hareketlerPersonele.get(p.id) ?? [];
     const oturumlar = oturumlariOlustur(ham);
 
+    const vardiya: VardiyaT | null = p.vardiyalar ?? g.vardiyalar[0] ?? null;
+    const gunPlaniBul = (tarih: string) => gunPlani(planlar.get(`${p.id}|${tarih}`), tarih, vardiya, vardiyaBul);
+    const cozucu = vardiyaCozucu(gunPlaniBul);
+    const bitisBul = (an: Date) => cozucu(an)?.son ?? null;
+
+    // Oturum, girişinin ait olduğu planlı vardiyanın gününe yazılır (gece vardiyasına erken giriş dahil)
     const gunHaritasi = new Map<string, Oturum[]>();
     for (const o of oturumlar) {
       const an = (o.giris ?? o.cikis) as Date;
-      const anahtar = yerelTarih(an);
+      const anahtar = (o.giris && cozucu(o.giris)?.tarih) || yerelTarih(an);
       const liste = gunHaritasi.get(anahtar);
       if (liste) liste.push(o);
       else gunHaritasi.set(anahtar, [o]);
@@ -189,8 +201,6 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
     const personelIzinleri = g.izinler.filter(
       (iz) => iz.personel_id === p.id && (!iz.durum || iz.durum === "ONAYLANDI")
     );
-    const vardiya: VardiyaT | null = p.vardiyalar ?? g.vardiyalar[0] ?? null;
-
     let calisilan = 0;
     let eksikGun = 0;
     let raporlu = 0;
@@ -208,15 +218,17 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
     for (let gun = 1; gun <= gunSayisi; gun++) {
       const tarih = gunStr(g.yil, g.ay, gun);
       const hg = haftaGunu(tarih);
-      const pazar = hg === 0;
+      const gp = gunPlaniBul(tarih);
+      const haftaTatili = gp.tatil;
+      const haftaTatiliMetni = gp.kaynak === "plan" ? "Hafta Tatili (Plan)" : "Hafta Tatili (Pazar)";
       const tatilAdi = tatilHaritasi.get(tarih);
-      const isGunu = !pazar && !tatilAdi;
+      const isGunu = !haftaTatili && !tatilAdi;
 
       const oturum = gunHaritasi.get(tarih) ?? [];
       const tam = oturum.filter((o) => o.giris && o.cikis);
       // Çıkışsız giriş, vardiya bitişi + fazla mesai payı dolana kadar "devam ediyor" sayılır (bkz. lib/mesai.ts)
       const devamEdiyor = (o: Oturum) =>
-        !!o.giris && !o.cikis && g.simdi.getTime() < mesaiSonSiniri(o.giris, vardiya);
+        !!o.giris && !o.cikis && g.simdi.getTime() < mesaiSonSiniri(o.giris, bitisBul);
       const mesaide = oturum.some(devamEdiyor);
       const eksik = oturum.filter((o) => (!o.giris || !o.cikis) && !devamEdiyor(o));
 
@@ -233,7 +245,6 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
 
       if (oturum.length > 0) {
         const ilkGiris = oturum.find((o) => o.giris)?.giris ?? null;
-        const sonCikis = tam.length > 0 ? tam[tam.length - 1].cikis : null;
         const sonCikisHerhangi = [...oturum].reverse().find((o) => o.cikis)?.cikis ?? null;
 
         if (ilkGiris) girisStr = yerelSaat(ilkGiris);
@@ -250,7 +261,10 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
               t + Math.max(0, Math.round(((o.cikis as Date).getTime() - (o.giris as Date).getTime()) / 60000)),
             0
           );
-          netDk = vardiya && brut >= MOLA_ESIGI_DK ? Math.max(0, brut - (vardiya.mola_dakika || 0)) : brut;
+          // Mola: o günün planlı vardiyalarının molası (bölünmüş çalışmada toplamı); plan yoksa varsayılan vardiya
+          const molaVardiyalari = gp.vardiyalar.length > 0 ? gp.vardiyalar : vardiya ? [vardiya] : [];
+          const mola = molaVardiyalari.reduce((t, v) => t + (v.mola_dakika || 0), 0);
+          netDk = molaVardiyalari.length > 0 && brut >= MOLA_ESIGI_DK ? Math.max(0, brut - mola) : brut;
 
           calisilan++;
           toplamDk += netDk;
@@ -260,27 +274,37 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
             resmiTatilCalisma++;
             resmiTatilDk += netDk;
             durum = `Resmi Tatil Çalışması (${tatilAdi})`;
-          } else if (pazar) {
+          } else if (haftaTatili) {
             haftaTatiliCalisma++;
             haftaTatiliDk += netDk;
-            durum = "Hafta Tatili Çalışması (Pazar)";
+            durum = `${haftaTatiliMetni.replace("Hafta Tatili", "Hafta Tatili Çalışması")}`;
           } else {
             durum = "Fiili Çalışma";
 
-            if (vardiya && ilkGiris) {
-              const planGiris = planAni(tarih, vardiya.baslangic_saat);
-              const gecikme = Math.round((ilkGiris.getTime() - planGiris.getTime()) / 60000);
-              if (gecikme > GECIKME_TOLERANS_DK) gecikmeDk += gecikme;
-            }
+            // Her planlı vardiya kendi oturumlarıyla karşılaştırılır (bölünmüş çalışmada sabah ve akşam ayrı ayrı)
+            for (const v of gp.vardiyalar) {
+              const plan = vardiyaAni(tarih, v);
+              const kendi = oturum.filter((o) => {
+                if (!o.giris) return false;
+                const enYakin = gp.vardiyalar.reduce((a, b) =>
+                  Math.abs(vardiyaAni(tarih, b).bas - (o.giris as Date).getTime()) <
+                  Math.abs(vardiyaAni(tarih, a).bas - (o.giris as Date).getTime())
+                    ? b
+                    : a
+                );
+                return enYakin.id === v.id;
+              });
+              const vGiris = kendi.find((o) => o.giris)?.giris ?? null;
+              const vCikis = [...kendi].reverse().find((o) => o.giris && o.cikis)?.cikis ?? null;
 
-            if (vardiya && sonCikis) {
-              let planCikis = planAni(tarih, vardiya.bitis_saat);
-              // Gece vardiyası: bitiş saati başlangıçtan küçükse ertesi güne sarkar
-              if (vardiya.bitis_saat.slice(0, 5) <= vardiya.baslangic_saat.slice(0, 5)) {
-                planCikis = new Date(planCikis.getTime() + 24 * 60 * 60 * 1000);
+              if (vGiris) {
+                const gecikme = Math.round((vGiris.getTime() - plan.bas) / 60000);
+                if (gecikme > GECIKME_TOLERANS_DK) gecikmeDk += gecikme;
               }
-              const mesai = Math.round((sonCikis.getTime() - planCikis.getTime()) / 60000);
-              if (mesai > MESAI_TOLERANS_DK) planDisiDk += mesai;
+              if (vCikis) {
+                const mesai = Math.round((vCikis.getTime() - plan.son) / 60000);
+                if (mesai > MESAI_TOLERANS_DK) planDisiDk += mesai;
+              }
             }
           }
         } else if (mesaide) {
@@ -309,15 +333,15 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
           durum = `${aktifIzin.izin_turu} [${aktifIzin.sgk_kodu || "İzin"}]`;
         } else {
           tip = "tatil";
-          durum = tatilAdi ? `Resmi Tatil (${tatilAdi})` : "Hafta Tatili (Pazar)";
+          durum = tatilAdi ? `Resmi Tatil (${tatilAdi})` : haftaTatiliMetni;
         }
         not = aktifIzin.aciklama || "";
       } else if (tatilAdi) {
         tip = "tatil";
         durum = `Resmi Tatil (${tatilAdi})`;
-      } else if (pazar) {
+      } else if (haftaTatili) {
         tip = "tatil";
-        durum = "Hafta Tatili (Pazar)";
+        durum = haftaTatiliMetni;
       } else if (tarih < kadroBaslangic) {
         durum = "Kadro Öncesi";
       } else if (tarih > g.bugun) {

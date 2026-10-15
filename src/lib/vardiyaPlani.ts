@@ -1,7 +1,7 @@
 // Vardiya planı: hangi gün hangi vardiyanın geçerli olduğu ve plan uyarıları.
 // Kural: bir gün için plan satırı varsa plan geçerlidir; yoksa personelin
 // varsayılan vardiyası kullanılır ve Pazar hafta tatili sayılır.
-import { haftaGunu, planAni } from "./tarih";
+import { haftaGunu, planAni, yerelTarih } from "./tarih";
 
 export interface PlanSatiri {
   id: string;
@@ -176,4 +176,45 @@ export function planUyarilari(
     }
   }
   return uyarilar;
+}
+
+// ---------------------------------------------------------------------
+// Giriş ile planlı vardiyayı eşleştirme
+// ---------------------------------------------------------------------
+/** Vardiya başlangıcından bu kadar önce yapılan giriş o vardiyaya sayılır */
+export const ERKEN_GIRIS_PAYI_MS = 4 * 60 * 60 * 1000;
+
+export interface VardiyaOrnegi {
+  /** Vardiyanın yazıldığı (başladığı) gün */
+  tarih: string;
+  vardiya: PlanVardiya;
+  bas: number;
+  son: number;
+}
+
+/**
+ * Bir an (genelde giriş saati) hangi planlı vardiyaya ait?
+ * Önceki, aynı ve sonraki günün planlı vardiyalarına bakılır; an,
+ * [başlangıç - 4 sa, bitiş) aralığına düşen vardiyalardan başlangıcı en yakın olanı döner.
+ * Böylece 00:00 gece vardiyası için 23:45'te yapılan giriş ertesi günün vardiyasına sayılır.
+ */
+export function vardiyaCozucu(gunPlaniBul: (tarih: string) => GunPlani): (an: Date) => VardiyaOrnegi | null {
+  return (an: Date) => {
+    const t = an.getTime();
+    const gun = yerelTarih(an);
+    let secilen: VardiyaOrnegi | null = null;
+    let enYakin = Infinity;
+    for (const tarih of [gunEkle(gun, -1), gun, gunEkle(gun, 1)]) {
+      for (const v of gunPlaniBul(tarih).vardiyalar) {
+        const { bas, son } = vardiyaAni(tarih, v);
+        if (t < bas - ERKEN_GIRIS_PAYI_MS || t >= son) continue;
+        const fark = Math.abs(t - bas);
+        if (fark < enYakin) {
+          enYakin = fark;
+          secilen = { tarih, vardiya: v, bas, son };
+        }
+      }
+    }
+    return secilen;
+  };
 }

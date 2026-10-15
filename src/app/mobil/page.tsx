@@ -5,7 +5,8 @@ import { Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } f
 import { supabase } from "../../lib/supabase";
 import { kisaTarih, selamlama, sureYaz, uzunTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
 import { Avatar, Ikon, Marka, Modal, useBildirim } from "../../components/ui";
-import { cikisiEksikGirisler, suankiGiris, type MesaiVardiya } from "../../lib/mesai";
+import { cikisiEksikGirisler, suankiGiris, type MesaiVardiya, type VardiyaBilgisi } from "../../lib/mesai";
+import { gunPlani, planHaritasi, vardiyaCozucu, type PlanSatiri, type PlanVardiya } from "../../lib/vardiyaPlani";
 
 interface Sube {
   id: string;
@@ -21,6 +22,17 @@ interface Personel {
   ad: string;
   soyad: string;
   departman: string | null;
+}
+
+/** mobil_ozet'in döndürdüğü vardiya planı satırı */
+interface MobilPlan {
+  tarih: string;
+  tur: "VARDIYA" | "TATIL";
+  vardiya_id: string | null;
+  ad: string | null;
+  baslangic_saat: string | null;
+  bitis_saat: string | null;
+  mola_dakika: number | null;
 }
 
 interface Hareket {
@@ -170,7 +182,9 @@ function MobilGirisEkrani() {
   const [subeler, setSubeler] = useState<Sube[]>([]);
   const [gecmis, setGecmis] = useState<Hareket[]>([]);
   // Personelin vardiyası (mobil_ozet döndürüyorsa); yoksa 18 saat kuralı kullanılır
-  const [vardiya, setVardiya] = useState<MesaiVardiya | null>(null);
+  const [vardiya, setVardiya] = useState<(MesaiVardiya & { ad?: string; mola_dakika?: number }) | null>(null);
+  // Vardiya planı (mobil_ozet döndürüyorsa); yoksa yalnızca varsayılan vardiya kullanılır
+  const [plan, setPlan] = useState<MobilPlan[] | null>(null);
   // Mesai hesabı için son 31 günün hareketleri (mobil_ozet döndürüyorsa); yoksa ekrandaki son 5 işlem kullanılır
   const [sonHareketler, setSonHareketler] = useState<Hareket[] | null>(null);
 
@@ -201,6 +215,7 @@ function MobilGirisEkrani() {
     setSubeler([]);
     setGecmis([]);
     setVardiya(null);
+    setPlan(null);
     setSonHareketler(null);
   }, []);
 
@@ -220,6 +235,7 @@ function MobilGirisEkrani() {
       setSubeler(data.subeler ?? []);
       setGecmis(data.gecmis ?? []);
       setVardiya(data.vardiya ?? null);
+      setPlan(data.plan ?? null);
       setSonHareketler(data.son_hareketler ?? null);
       return true;
     },
@@ -297,11 +313,41 @@ function MobilGirisEkrani() {
   const sinirda = !!yakin && yakin.mesafe <= Number(yakin.sube.limit_metre);
 
   // Mesai durumu: son hareket "giriş" ise ve vardiyası (fazla mesai payıyla) bitmediyse içeridedir
+  const vardiyaBilgisi: VardiyaBilgisi = useMemo(() => {
+    if (!plan) return vardiya;
+    const satirlar: PlanSatiri[] = plan.map((x, i) => ({
+      id: String(i),
+      personel_id: "ben",
+      tarih: x.tarih,
+      tur: x.tur,
+      vardiya_id: x.vardiya_id,
+      sube_id: null,
+    }));
+    const vardiyalar = new Map<string, PlanVardiya>();
+    for (const x of plan) {
+      if (x.vardiya_id && x.baslangic_saat && x.bitis_saat) {
+        vardiyalar.set(x.vardiya_id, {
+          id: x.vardiya_id,
+          ad: x.ad ?? "Vardiya",
+          baslangic_saat: x.baslangic_saat,
+          bitis_saat: x.bitis_saat,
+          mola_dakika: x.mola_dakika ?? 0,
+        });
+      }
+    }
+    const varsayilan: PlanVardiya | null = vardiya
+      ? { id: "varsayilan", ad: vardiya.ad ?? "Vardiya", mola_dakika: vardiya.mola_dakika ?? 0, ...vardiya }
+      : null;
+    const harita = planHaritasi(satirlar);
+    const cozucu = vardiyaCozucu((tarih) => gunPlani(harita.get(`ben|${tarih}`), tarih, varsayilan, (id) => vardiyalar.get(id)));
+    return (an: Date) => cozucu(an)?.son ?? null;
+  }, [plan, vardiya]);
+
   const hesapHareketleri = sonHareketler ?? gecmis;
-  const girisZamani = simdi ? suankiGiris(hesapHareketleri, vardiya, simdi.getTime()) : null;
+  const girisZamani = simdi ? suankiGiris(hesapHareketleri, vardiyaBilgisi, simdi.getTime()) : null;
   const icerde = girisZamani !== null;
   // Vardiyası bittiği halde çıkışı yapılmamış girişler (yönetici manuel çıkış ekleyene kadar uyarı gösterilir)
-  const cikisiEksikler = simdi ? cikisiEksikGirisler(hesapHareketleri, vardiya, simdi.getTime()) : [];
+  const cikisiEksikler = simdi ? cikisiEksikGirisler(hesapHareketleri, vardiyaBilgisi, simdi.getTime()) : [];
   const gecenDk = girisZamani && simdi ? Math.max(0, Math.floor((simdi.getTime() - girisZamani.getTime()) / 60000)) : 0;
 
   // Durum değişince doğru işlemi önceden seç (önceki değer karşılaştırılarak, render sırasında)

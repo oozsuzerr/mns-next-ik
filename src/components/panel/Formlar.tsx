@@ -658,8 +658,10 @@ export interface CikisEksikSatiri {
   /** Çıkışı olmayan girişin zamanı (ISO) */
   giris: string;
   subeId: string | null;
-  /** Vardiyaya göre planlanan çıkış (ISO); vardiyası yoksa null */
+  /** Girişin eşleştiği planlı vardiyanın bitişi (ISO); eşleşme yoksa null */
   planliBitis: string | null;
+  /** Girişin eşleştiği planlı vardiyanın adı */
+  vardiyaAdi: string | null;
 }
 
 function gunEtiketi(iso: string): string {
@@ -702,7 +704,7 @@ export function CikisEksikListesi({
                   </p>
                   <p className="m3 text-xs">
                     {gunEtiketi(s.giris)}, <span className="sayi">{yerelSaat(s.giris)}</span> girişi
-                    {s.personel.vardiyalar ? `, ${s.personel.vardiyalar.ad} vardiyası` : ""}
+                    {s.vardiyaAdi ? `, ${s.vardiyaAdi} vardiyası` : ""}
                     {", "}
                     {s.personel.subeler?.ad || "Şube atanmamış"}
                   </p>

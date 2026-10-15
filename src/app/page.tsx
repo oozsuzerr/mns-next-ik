@@ -18,8 +18,9 @@ import {
   type Sube,
   type Vardiya,
 } from "../lib/tipler";
-import { ayAdi, ayAraligi, haftaGunu, planAni, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
-import { cikisiEksikGirisler, planlananBitis, suankiGiris } from "../lib/mesai";
+import { ayAdi, ayAraligi, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
+import { cikisiEksikGirisler, suankiGiris } from "../lib/mesai";
+import { gunEkle, gunPlani, planHaritasi, vardiyaCozucu, type PlanSatiri } from "../lib/vardiyaPlani";
 import { AcilirMenu, Bos, Ikon, Marka, useBildirim, type IkonAdi } from "../components/ui";
 import BugunSerit, { type BugunOzet } from "../components/panel/BugunSerit";
 import PuantajSekmesi from "../components/panel/PuantajSekmesi";
@@ -334,8 +335,12 @@ async function paneliGetir(seciliAy: string) {
   const aralikSon = new Date(son.getTime() + gun).toISOString();
   // Bugünkü durum ve çıkışı eksik girişler için son CIKIS_EKSIK_GUN günün hareketleri
   const bugunBas = new Date(new Date(`${yerelTarih()}T00:00:00+03:00`).getTime() - CIKIS_EKSIK_GUN * gun).toISOString();
+  // Vardiya planı: puantaj ayı ve son CIKIS_EKSIK_GUN gün (iki yanda birer gün payla)
+  const bugun = yerelTarih();
+  const planBas = [yerelTarih(aralikBas), gunEkle(bugun, -CIKIS_EKSIK_GUN - 1)].sort()[0];
+  const planSon = [yerelTarih(aralikSon), gunEkle(bugun, 1)].sort()[1];
 
-  const [subeD, varD, perler, harler, bugunD, izler, tatD] = await Promise.all([
+  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar] = await Promise.all([
     supabase.from("subeler").select("*").order("created_at", { ascending: true }),
     supabase.from("vardiyalar").select("*").order("created_at", { ascending: true }),
     tumunuGetir<Personel>((a, b) =>
@@ -374,6 +379,17 @@ async function paneliGetir(seciliAy: string) {
         .range(a, b)
     ),
     supabase.from("resmi_tatiller").select("*").order("tarih", { ascending: true }),
+    // Plan okunamazsa (ör. tablo yok) panel çalışmaya devam eder; varsayılan vardiyalar kullanılır
+    tumunuGetir<PlanSatiri>((a, b) =>
+      supabase
+        .from("vardiya_plani")
+        .select("id, personel_id, tarih, tur, vardiya_id, sube_id")
+        .gte("tarih", planBas)
+        .lte("tarih", planSon)
+        .order("tarih")
+        .order("id")
+        .range(a, b)
+    ).catch(() => [] as PlanSatiri[]),
   ]);
 
   if (subeD.error) throw subeD.error;
@@ -388,6 +404,7 @@ async function paneliGetir(seciliAy: string) {
     bugunHareketleri: bugunD,
     izinler: izler,
     resmiTatiller: (tatD.data ?? []) as ResmiTatil[],
+    planlar,
   };
 }
 
@@ -403,6 +420,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
   const [vardiyalar, setVardiyalar] = useState<Vardiya[]>([]);
   const [izinler, setIzinler] = useState<Izin[]>([]);
   const [resmiTatiller, setResmiTatiller] = useState<ResmiTatil[]>([]);
+  const [planlar, setPlanlar] = useState<PlanSatiri[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState<string | null>(null);
   // "İçeride" hesabındaki 18 saat sınırı için son veri çekme anı
@@ -429,6 +447,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
           setBugunHareketleri(v.bugunHareketleri);
           setIzinler(v.izinler);
           setResmiTatiller(v.resmiTatiller);
+          setPlanlar(v.planlar);
           setVeriZamani(Date.now());
           setHataMesaji(null);
         })
@@ -444,6 +463,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
       setBugunHareketleri,
       setIzinler,
       setResmiTatiller,
+      setPlanlar,
       setVeriZamani,
       setHataMesaji,
       setYukleniyor,
@@ -486,10 +506,11 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
         izinler,
         resmiTatiller,
         vardiyalar,
+        planlar,
         bugun: bugunTarih,
         simdi: new Date(),
       }),
-    [yil, ayNo, personeller, hareketler, izinler, resmiTatiller, vardiyalar, bugunTarih]
+    [yil, ayNo, personeller, hareketler, izinler, resmiTatiller, vardiyalar, planlar, bugunTarih]
   );
 
   const filtrelenmisPuantaj = puantajListesi.filter(
@@ -509,9 +530,22 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
     return harita;
   }, [bugunHareketleri]);
 
+  // Kişinin bir gündeki geçerli planı ve girişlerini planlı vardiyayla eşleştiren çözücü
+  const kisiPlani = useMemo(() => {
+    const harita = planHaritasi(planlar);
+    const vardiyaHaritasi = new Map(vardiyalar.map((v) => [v.id, v]));
+    const vardiyaBul = (id: string) => vardiyaHaritasi.get(id);
+    return (p: Personel) => {
+      const varsayilan = p.vardiyalar ?? vardiyalar[0] ?? null;
+      const gunPlaniBul = (tarih: string) => gunPlani(harita.get(`${p.id}|${tarih}`), tarih, varsayilan, vardiyaBul);
+      const cozucu = vardiyaCozucu(gunPlaniBul);
+      return { gunPlaniBul, cozucu, bitisBul: (an: Date) => cozucu(an)?.son ?? null };
+    };
+  }, [planlar, vardiyalar]);
+
   const bugunOzet: BugunOzet = useMemo(() => {
     const simdi = veriZamani;
-    const bugunTatil = haftaGunu(bugunTarih) === 0 || resmiTatiller.some((t) => t.tarih === bugunTarih);
+    const resmiTatil = resmiTatiller.some((t) => t.tarih === bugunTarih);
 
     const izinliIdleri = new Set(
       izinler
@@ -528,14 +562,20 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
       (p) => p.aktif && (seciliSubeFiltre === "TUMU" || p.varsayilan_sube_id === seciliSubeFiltre)
     );
 
+    const planlari = new Map(aktifler.map((p) => [p.id, kisiPlani(p)]));
+    // Resmi tatil ya da herkes planda tatildeyse gün tatil sayılır
+    const bugunTatil =
+      resmiTatil || (aktifler.length > 0 && aktifler.every((p) => kisiPlani(p).gunPlaniBul(bugunTarih).tatil));
+
     const sonuc: BugunOzet = { toplam: aktifler.length, iceride: [], cikti: [], izinli: [], gelmedi: [], gec: [], tatil: bugunTatil };
 
     for (const p of aktifler) {
       const hs = kisiHareketleri.get(p.id) ?? [];
       const bugunkuler = hs.filter((h) => yerelTarih(h.created_at) === bugunTarih);
-      const vardiya = p.vardiyalar ?? vardiyalar[0];
+      const plan = planlari.get(p.id) ?? kisiPlani(p);
+      const kisiTatil = resmiTatil || plan.gunPlaniBul(bugunTarih).tatil;
 
-      if (suankiGiris(hs, vardiya, simdi)) {
+      if (suankiGiris(hs, plan.bitisBul, simdi)) {
         sonuc.iceride.push(p);
       } else if (bugunkuler.length > 0) {
         sonuc.cikti.push(p);
@@ -543,38 +583,41 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
         sonuc.izinli.push(p);
         continue;
       } else {
-        if (!bugunTatil) sonuc.gelmedi.push(p);
+        if (!kisiTatil) sonuc.gelmedi.push(p);
         continue;
       }
 
+      // Bugünkü ilk giriş, eşleştiği planlı vardiyanın başlangıcından 5 dk sonraysa geç kalmıştır
       const ilkGiris = bugunkuler.find((h) => h.islem_turu === "İşe Giriş");
-      if (ilkGiris && vardiya) {
-        const plan = planAni(bugunTarih, vardiya.baslangic_saat).getTime();
-        if ((new Date(ilkGiris.created_at).getTime() - plan) / 60000 > 5) sonuc.gec.push(p);
+      if (ilkGiris) {
+        const an = new Date(ilkGiris.created_at);
+        const ornek = plan.cozucu(an);
+        if (ornek && (an.getTime() - ornek.bas) / 60000 > 5) sonuc.gec.push(p);
       }
     }
     return sonuc;
-  }, [personeller, kisiHareketleri, izinler, resmiTatiller, vardiyalar, seciliSubeFiltre, bugunTarih, veriZamani]);
+  }, [personeller, kisiHareketleri, izinler, resmiTatiller, kisiPlani, seciliSubeFiltre, bugunTarih, veriZamani]);
 
   // Çıkış basmayı unutanlar: vardiyası (ve fazla mesai payı) bittiği halde çıkışı olmayan girişler
   const cikisEksikler: CikisEksikSatiri[] = useMemo(() => {
     const sonuc: CikisEksikSatiri[] = [];
     for (const p of personeller) {
       if (!p.aktif || (seciliSubeFiltre !== "TUMU" && p.varsayilan_sube_id !== seciliSubeFiltre)) continue;
-      const vardiya = p.vardiyalar ?? vardiyalar[0] ?? null;
-      for (const h of cikisiEksikGirisler(kisiHareketleri.get(p.id) ?? [], vardiya, veriZamani)) {
-        const giris = new Date(h.created_at);
+      const plan = kisiPlani(p);
+      for (const h of cikisiEksikGirisler(kisiHareketleri.get(p.id) ?? [], plan.bitisBul, veriZamani)) {
+        const ornek = plan.cozucu(new Date(h.created_at));
         sonuc.push({
           personel: p,
           giris: h.created_at,
           subeId: h.sube_id ?? p.varsayilan_sube_id,
-          planliBitis: vardiya ? planlananBitis(giris, vardiya).toISOString() : null,
+          planliBitis: ornek ? new Date(ornek.son).toISOString() : null,
+          vardiyaAdi: ornek?.vardiya.ad ?? null,
         });
       }
     }
     // En eski kayıt en üstte
     return sonuc.sort((a, b) => a.giris.localeCompare(b.giris));
-  }, [personeller, kisiHareketleri, vardiyalar, seciliSubeFiltre, veriZamani]);
+  }, [personeller, kisiHareketleri, kisiPlani, seciliSubeFiltre, veriZamani]);
 
   const pinsizSayisi = personeller.filter((p) => p.aktif && !p.pin_tanimli).length;
   const eksikToplam = filtrelenmisPuantaj.reduce((t, p) => t + p.eksikGunler, 0);
@@ -1061,7 +1104,12 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
               </button>
             </div>
             {vardiyaGorunum === "plan" ? (
-              <VardiyaPlani personeller={personeller} vardiyalar={vardiyalar} subeFiltre={seciliSubeFiltre} />
+              <VardiyaPlani
+                personeller={personeller}
+                vardiyalar={vardiyalar}
+                subeFiltre={seciliSubeFiltre}
+                onDegisti={yenile}
+              />
             ) : (
               <VardiyaSekmesi
                 vardiyalar={vardiyalar}

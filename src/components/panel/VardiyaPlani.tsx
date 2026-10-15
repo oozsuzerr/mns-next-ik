@@ -100,10 +100,13 @@ export default function VardiyaPlani({
   personeller,
   vardiyalar,
   subeFiltre,
+  onDegisti,
 }: {
   personeller: Personel[];
   vardiyalar: Vardiya[];
   subeFiltre: string;
+  /** Plan kaydedilince çağrılır (panel puantajı yenilesin diye) */
+  onDegisti?: () => void;
 }) {
   const { bildir, onayla } = useBildirim();
   const bugun = yerelTarih();
@@ -145,6 +148,11 @@ export default function VardiyaPlani({
   useEffect(() => {
     getir();
   }, [getir]);
+
+  function degisti() {
+    getir();
+    onDegisti?.();
+  }
 
   function aralikDegistir(yeniGorunum: Gorunum, yeniBaslangic: string) {
     if (yeniGorunum === gorunum && yeniBaslangic === baslangic) return;
@@ -256,7 +264,7 @@ export default function VardiyaPlani({
     } catch (err) {
       bildir(planHatasi(err), "hata");
     } finally {
-      getir();
+      degisti();
     }
   }
 
@@ -437,7 +445,7 @@ export default function VardiyaPlani({
           satirlar={harita.get(`${hucre.personel.id}|${hucre.tarih}`) ?? []}
           vardiyalar={vardiyalar}
           onKapat={() => setHucre(null)}
-          onKayit={getir}
+          onKayit={degisti}
         />
       )}
       {topluAcik && (
@@ -447,7 +455,7 @@ export default function VardiyaPlani({
           varsayilanBas={bas}
           varsayilanSon={son}
           onKapat={() => setTopluAcik(false)}
-          onKayit={getir}
+          onKayit={degisti}
         />
       )}
     </div>
