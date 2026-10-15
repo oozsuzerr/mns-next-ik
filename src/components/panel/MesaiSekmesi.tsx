@@ -98,6 +98,7 @@ export default function MesaiSekmesi({
   onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
 }) {
   const [sadeceOnayli, setSadeceOnayli] = useState(true);
+  const [kararFiltre, setKararFiltre] = useState<"TUMU" | "ONAYLANDI" | "REDDEDILDI">("TUMU");
 
   const subede = (t: MesaiTalebi) => subeFiltre === "TUMU" || t.personeller?.varsayilan_sube_id === subeFiltre;
   const bekleyen = talepler.filter((t) => t.durum === "BEKLEMEDE" && subede(t));
@@ -128,6 +129,14 @@ export default function MesaiSekmesi({
   }, [talepler, personeller, seciliAy, subeFiltre, sadeceOnayli]);
 
   const genelToplam = ozet.reduce((a, k) => a + k.toplamDk, 0);
+
+  // Seçili ayda karar verilmiş (onaylanan ve reddedilen) bütün mesailer, en yeni tarih üstte
+  const kararlilar = talepler
+    .filter((t) => t.tarih.startsWith(seciliAy) && t.durum !== "BEKLEMEDE" && subede(t))
+    .sort((a, b) => b.tarih.localeCompare(a.tarih) || b.baslangic_saat.localeCompare(a.baslangic_saat));
+  const onaylananSayi = kararlilar.filter((t) => t.durum === "ONAYLANDI").length;
+  const reddedilenSayi = kararlilar.length - onaylananSayi;
+  const gorunenKararlar = kararFiltre === "TUMU" ? kararlilar : kararlilar.filter((t) => t.durum === kararFiltre);
 
   return (
     <div className="space-y-8">
@@ -210,6 +219,79 @@ export default function MesaiSekmesi({
                   </details>
                 </li>
               ))}
+            </ul>
+          )}
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h3 className="baslik-font m1 w-full text-lg sm:w-auto sm:flex-1">Onaylanan ve reddedilen mesailer</h3>
+          <div className="segment segment-3" style={{ width: "100%", maxWidth: 420 }} role="tablist" aria-label="Karar">
+            <button type="button" role="tab" aria-selected={kararFiltre === "TUMU"} data-aktif={kararFiltre === "TUMU"} onClick={() => setKararFiltre("TUMU")}>
+              Tümü ({kararlilar.length})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={kararFiltre === "ONAYLANDI"}
+              data-aktif={kararFiltre === "ONAYLANDI"}
+              onClick={() => setKararFiltre("ONAYLANDI")}
+            >
+              Onaylanan ({onaylananSayi})
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={kararFiltre === "REDDEDILDI"}
+              data-aktif={kararFiltre === "REDDEDILDI"}
+              onClick={() => setKararFiltre("REDDEDILDI")}
+            >
+              Reddedilen ({reddedilenSayi})
+            </button>
+          </div>
+        </div>
+        <div className="panel overflow-hidden">
+          {gorunenKararlar.length === 0 ? (
+            <Bos ikon="talepler" baslik="Kayıt yok" metin={`${ayAdi(seciliAy)} için bu filtrede karar verilmiş fazla mesai yok.`} />
+          ) : (
+            <ul className="liste">
+              {gorunenKararlar.map((t) => {
+                const red = t.durum === "REDDEDILDI";
+                return (
+                  <li key={t.id} className="flex items-start gap-3 px-4 py-3.5 sm:px-5">
+                    <Avatar ad={t.personeller?.ad ?? "?"} soyad={t.personeller?.soyad ?? ""} boyut={36} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="m1 font-semibold">
+                          {t.personeller?.ad} {t.personeller?.soyad}
+                        </span>
+                        <Rozet ton={red ? "hata" : "giris"}>{red ? "Reddedildi" : "Onaylandı"}</Rozet>
+                      </div>
+                      <p className="m2 sayi mt-0.5 text-sm">
+                        {gunEtiketi(t.tarih)}, {saatAraligi(t)} · <span className="m1 font-semibold">{sureYaz(t.sure_dk)}</span>
+                      </p>
+                      <p className="m2 mt-1 text-sm">
+                        <span className="m3">Neden: </span>
+                        {t.neden}
+                      </p>
+                      {t.karar_notu ? (
+                        <p className="mt-1 text-sm" style={{ color: red ? "var(--hata)" : "var(--m2)" }}>
+                          <span className="font-semibold">{red ? "Red nedeni: " : "Amir notu: "}</span>
+                          {t.karar_notu}
+                        </p>
+                      ) : (
+                        red && <p className="m3 mt-1 text-xs">Red nedeni yazılmamış.</p>
+                      )}
+                      {t.karar_zamani && (
+                        <p className="m3 mt-0.5 text-xs">
+                          Karar: {kisaTarih(yerelTarih(t.karar_zamani))} {yerelSaat(t.karar_zamani)}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>

@@ -822,6 +822,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             "Süre (saat)": Math.round((t.sure_dk / 60) * 100) / 100,
             Neden: t.neden,
             Durum: t.durum,
+            "Amir Açıklaması": t.karar_notu || "-",
+            "Karar Zamanı": t.karar_zamani ? `${yerelTarih(t.karar_zamani)} ${yerelSaat(t.karar_zamani)}` : "-",
           })),
       };
     }
