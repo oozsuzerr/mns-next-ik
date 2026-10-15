@@ -50,6 +50,7 @@ export interface Hareket {
 export interface BugunHareket {
   id: string;
   personel_id: string;
+  sube_id: string | null;
   islem_turu: string;
   created_at: string;
 }

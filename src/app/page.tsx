@@ -19,6 +19,7 @@ import {
   type Vardiya,
 } from "../lib/tipler";
 import { ayAdi, ayAraligi, haftaGunu, planAni, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
+import { cikisiEksikGirisler, planlananBitis, suankiGiris } from "../lib/mesai";
 import { AcilirMenu, Bos, Ikon, Marka, useBildirim, type IkonAdi } from "../components/ui";
 import BugunSerit, { type BugunOzet } from "../components/panel/BugunSerit";
 import PuantajSekmesi from "../components/panel/PuantajSekmesi";
@@ -28,9 +29,12 @@ import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
 import {
+  CikisEksikListesi,
   GelmeyenlerListesi,
   IzinFormu,
   ManuelFormu,
+  type CikisEksikSatiri,
+  type ManuelBaslangic,
   PersonelFormu,
   PinFormu,
   VardiyaFormu,
@@ -222,42 +226,54 @@ function YoneticiGiris() {
 // 2) GENEL BAKIŞ
 // =====================================================================
 function DikkatListesi({
+  cikisEksik,
   bekleyen,
   pinsiz,
   eksik,
   devamsiz,
   donem,
   onGit,
+  onCikisEksik,
 }: {
+  cikisEksik: number;
   bekleyen: number;
   pinsiz: number;
   eksik: number;
   devamsiz: number;
   donem: string;
   onGit: (s: Sekme) => void;
+  onCikisEksik: () => void;
 }) {
-  const maddeler: { ikon: IkonAdi; metin: string; sekme: Sekme; etiket: string }[] = [];
+  const maddeler: { ikon: IkonAdi; metin: string; etiket: string; acil?: boolean; eylem: () => void }[] = [];
+  if (cikisEksik > 0)
+    maddeler.push({
+      ikon: "uyari",
+      metin: `${cikisEksik} girişin çıkış kaydı yok: personel çıkış basmayı unutmuş`,
+      etiket: "Listeyi aç",
+      acil: true,
+      eylem: onCikisEksik,
+    });
   if (bekleyen > 0)
-    maddeler.push({ ikon: "talepler", metin: `${bekleyen} izin talebi onayınızı bekliyor`, sekme: "talepler", etiket: "İncele" });
+    maddeler.push({ ikon: "talepler", metin: `${bekleyen} izin talebi onayınızı bekliyor`, etiket: "İncele", eylem: () => onGit("talepler") });
   if (pinsiz > 0)
     maddeler.push({
       ikon: "anahtar",
       metin: `${pinsiz} personelin mobil PIN'i yok, giriş yapamaz`,
-      sekme: "personel",
+      eylem: () => onGit("personel"),
       etiket: "PIN belirle",
     });
   if (eksik > 0)
     maddeler.push({
       ikon: "uyari",
       metin: `${donem} döneminde ${eksik} gün eksik giriş veya çıkış kaydı var`,
-      sekme: "puantaj",
+      eylem: () => onGit("puantaj"),
       etiket: "Puantaja bak",
     });
   if (devamsiz > 0)
     maddeler.push({
       ikon: "takvim",
       metin: `${donem} döneminde toplam ${devamsiz} devamsız gün var`,
-      sekme: "puantaj",
+      eylem: () => onGit("puantaj"),
       etiket: "Puantaja bak",
     });
 
@@ -272,11 +288,16 @@ function DikkatListesi({
         <ul className="liste">
           {maddeler.map((m) => (
             <li key={m.metin} className="flex items-center gap-3 px-5 py-3.5">
-              <span className="bos-ikon flex h-9 w-9 flex-none items-center justify-center rounded-full">
+              <span
+                className="bos-ikon flex h-9 w-9 flex-none items-center justify-center rounded-full"
+                style={m.acil ? { background: "var(--hata-acik)", color: "var(--hata)" } : undefined}
+              >
                 <Ikon ad={m.ikon} boyut={17} />
               </span>
-              <p className="m1 flex-1 text-sm font-medium">{m.metin}</p>
-              <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onGit(m.sekme)}>
+              <p className="m1 flex-1 text-sm font-medium" style={m.acil ? { color: "var(--hata)" } : undefined}>
+                {m.metin}
+              </p>
+              <button type="button" className={`btn btn-kucuk ${m.acil ? "btn-tehlike" : "btn-ikincil"}`} onClick={m.eylem}>
                 {m.etiket}
               </button>
             </li>
@@ -295,9 +316,13 @@ type FormDurumu =
   | { tur: "pin"; hedef: Personel }
   | { tur: "vardiya"; duzenlenen: Vardiya | null }
   | { tur: "izin" }
-  | { tur: "manuel" }
+  | { tur: "manuel"; baslangic?: ManuelBaslangic }
   | { tur: "gelmeyen" }
+  | { tur: "cikisEksik" }
   | null;
+
+/** Çıkışı eksik girişler bu kadar gün geriye kadar aranır */
+const CIKIS_EKSIK_GUN = 31;
 
 // Panelin seçili aya ait tüm verilerini çeker; hata olursa fırlatır
 async function paneliGetir(seciliAy: string) {
@@ -306,8 +331,8 @@ async function paneliGetir(seciliAy: string) {
   // Gece vardiyası eşleştirmesi için ayın bir gün öncesi ve sonrası da alınır
   const aralikBas = new Date(bas.getTime() - gun).toISOString();
   const aralikSon = new Date(son.getTime() + gun).toISOString();
-  // Bugünkü durum için: dün akşamdan kalan gece vardiyalarını da yakalamak için 18 saat geriye gider
-  const bugunBas = new Date(new Date(`${yerelTarih()}T00:00:00+03:00`).getTime() - 18 * 60 * 60 * 1000).toISOString();
+  // Bugünkü durum ve çıkışı eksik girişler için son CIKIS_EKSIK_GUN günün hareketleri
+  const bugunBas = new Date(new Date(`${yerelTarih()}T00:00:00+03:00`).getTime() - CIKIS_EKSIK_GUN * gun).toISOString();
 
   const [subeD, varD, perler, harler, bugunD, izler, tatD] = await Promise.all([
     supabase.from("subeler").select("*").order("created_at", { ascending: true }),
@@ -330,12 +355,15 @@ async function paneliGetir(seciliAy: string) {
         .order("id")
         .range(a, b)
     ),
-    supabase
-      .from("hareketler")
-      .select("id, personel_id, islem_turu, created_at")
-      .gte("created_at", bugunBas)
-      .order("created_at", { ascending: true })
-      .limit(1000),
+    tumunuGetir<BugunHareket>((a, b) =>
+      supabase
+        .from("hareketler")
+        .select("id, personel_id, sube_id, islem_turu, created_at")
+        .gte("created_at", bugunBas)
+        .order("created_at", { ascending: true })
+        .order("id")
+        .range(a, b)
+    ),
     tumunuGetir<Izin>((a, b) =>
       supabase
         .from("izinler")
@@ -349,7 +377,6 @@ async function paneliGetir(seciliAy: string) {
 
   if (subeD.error) throw subeD.error;
   if (varD.error) throw varD.error;
-  if (bugunD.error) throw bugunD.error;
   if (tatD.error) throw tatD.error;
 
   return {
@@ -357,7 +384,7 @@ async function paneliGetir(seciliAy: string) {
     vardiyalar: (varD.data ?? []) as Vardiya[],
     personeller: perler,
     hareketler: harler,
-    bugunHareketleri: (bugunD.data ?? []) as BugunHareket[],
+    bugunHareketleri: bugunD,
     izinler: izler,
     resmiTatiller: (tatD.data ?? []) as ResmiTatil[],
   };
@@ -469,9 +496,19 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
 
   const bekleyenSayisi = izinler.filter((iz) => iz.durum === "BEKLEMEDE").length;
 
+  // Son CIKIS_EKSIK_GUN günün hareketleri, kişiye göre (eskiden yeniye)
+  const kisiHareketleri = useMemo(() => {
+    const harita = new Map<string, BugunHareket[]>();
+    for (const h of bugunHareketleri) {
+      const liste = harita.get(h.personel_id);
+      if (liste) liste.push(h);
+      else harita.set(h.personel_id, [h]);
+    }
+    return harita;
+  }, [bugunHareketleri]);
+
   const bugunOzet: BugunOzet = useMemo(() => {
     const simdi = veriZamani;
-    const SAAT18 = 18 * 60 * 60 * 1000;
     const bugunTatil = haftaGunu(bugunTarih) === 0 || resmiTatiller.some((t) => t.tarih === bugunTarih);
 
     const izinliIdleri = new Set(
@@ -485,13 +522,6 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
         .map((iz) => iz.personel_id)
     );
 
-    const kisiHareketleri = new Map<string, BugunHareket[]>();
-    for (const h of bugunHareketleri) {
-      const liste = kisiHareketleri.get(h.personel_id);
-      if (liste) liste.push(h);
-      else kisiHareketleri.set(h.personel_id, [h]);
-    }
-
     const aktifler = personeller.filter(
       (p) => p.aktif && (seciliSubeFiltre === "TUMU" || p.varsayilan_sube_id === seciliSubeFiltre)
     );
@@ -500,10 +530,10 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
 
     for (const p of aktifler) {
       const hs = kisiHareketleri.get(p.id) ?? [];
-      const son = hs.length > 0 ? hs[hs.length - 1] : null;
       const bugunkuler = hs.filter((h) => yerelTarih(h.created_at) === bugunTarih);
+      const vardiya = p.vardiyalar ?? vardiyalar[0];
 
-      if (son && son.islem_turu === "İşe Giriş" && simdi - new Date(son.created_at).getTime() < SAAT18) {
+      if (suankiGiris(hs, vardiya, simdi)) {
         sonuc.iceride.push(p);
       } else if (bugunkuler.length > 0) {
         sonuc.cikti.push(p);
@@ -516,14 +546,33 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
       }
 
       const ilkGiris = bugunkuler.find((h) => h.islem_turu === "İşe Giriş");
-      const vardiya = p.vardiyalar ?? vardiyalar[0];
       if (ilkGiris && vardiya) {
         const plan = planAni(bugunTarih, vardiya.baslangic_saat).getTime();
         if ((new Date(ilkGiris.created_at).getTime() - plan) / 60000 > 5) sonuc.gec.push(p);
       }
     }
     return sonuc;
-  }, [personeller, bugunHareketleri, izinler, resmiTatiller, vardiyalar, seciliSubeFiltre, bugunTarih, veriZamani]);
+  }, [personeller, kisiHareketleri, izinler, resmiTatiller, vardiyalar, seciliSubeFiltre, bugunTarih, veriZamani]);
+
+  // Çıkış basmayı unutanlar: vardiyası (ve fazla mesai payı) bittiği halde çıkışı olmayan girişler
+  const cikisEksikler: CikisEksikSatiri[] = useMemo(() => {
+    const sonuc: CikisEksikSatiri[] = [];
+    for (const p of personeller) {
+      if (!p.aktif || (seciliSubeFiltre !== "TUMU" && p.varsayilan_sube_id !== seciliSubeFiltre)) continue;
+      const vardiya = p.vardiyalar ?? vardiyalar[0] ?? null;
+      for (const h of cikisiEksikGirisler(kisiHareketleri.get(p.id) ?? [], vardiya, veriZamani)) {
+        const giris = new Date(h.created_at);
+        sonuc.push({
+          personel: p,
+          giris: h.created_at,
+          subeId: h.sube_id ?? p.varsayilan_sube_id,
+          planliBitis: vardiya ? planlananBitis(giris, vardiya).toISOString() : null,
+        });
+      }
+    }
+    // En eski kayıt en üstte
+    return sonuc.sort((a, b) => a.giris.localeCompare(b.giris));
+  }, [personeller, kisiHareketleri, vardiyalar, seciliSubeFiltre, veriZamani]);
 
   const pinsizSayisi = personeller.filter((p) => p.aktif && !p.pin_tanimli).length;
   const eksikToplam = filtrelenmisPuantaj.reduce((t, p) => t + p.eksikGunler, 0);
@@ -935,6 +984,8 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
           <div className="space-y-6">
             <BugunSerit ozet={bugunOzet} yukleniyor={yukleniyor} onGelmeyenler={() => setForm({ tur: "gelmeyen" })} />
             <DikkatListesi
+              cikisEksik={cikisEksikler.length}
+              onCikisEksik={() => setForm({ tur: "cikisEksik" })}
               bekleyen={bekleyenSayisi}
               pinsiz={pinsizSayisi}
               eksik={eksikToplam}
@@ -1025,9 +1076,22 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
       )}
       {form?.tur === "izin" && <IzinFormu personeller={personeller} onKapat={() => setForm(null)} onKayit={yenile} />}
       {form?.tur === "manuel" && (
-        <ManuelFormu personeller={personeller} subeler={subeler} onKapat={() => setForm(null)} onKayit={yenile} />
+        <ManuelFormu
+          personeller={personeller}
+          subeler={subeler}
+          baslangic={form.baslangic}
+          onKapat={() => setForm(null)}
+          onKayit={yenile}
+        />
       )}
       {form?.tur === "gelmeyen" && <GelmeyenlerListesi liste={bugunOzet.gelmedi} onKapat={() => setForm(null)} />}
+      {form?.tur === "cikisEksik" && (
+        <CikisEksikListesi
+          liste={cikisEksikler}
+          onKapat={() => setForm(null)}
+          onCikisEkle={(baslangic) => setForm({ tur: "manuel", baslangic })}
+        />
+      )}
     </div>
   );
 }

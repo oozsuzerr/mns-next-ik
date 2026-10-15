@@ -3,8 +3,8 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
 import { hataYaz, tcGecerliMi, type Personel, type Sube, type Vardiya } from "../../lib/tipler";
-import { yerelTarih } from "../../lib/tarih";
-import { Avatar, Modal, useBildirim } from "../ui";
+import { GUN_ADLARI, kisaTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
+import { Avatar, Ikon, Modal, Rozet, useBildirim } from "../ui";
 
 function Alan({ etiket, ipucu, children }: { etiket: string; ipucu?: string; children: ReactNode }) {
   return (
@@ -498,14 +498,25 @@ export function IzinFormu({
 // ---------------------------------------------------------------------
 // Manuel giriş / çıkış düzeltme
 // ---------------------------------------------------------------------
+/** Manuel formu önceden doldurmak için (ör. çıkışı eksik listesinden açılınca) */
+export interface ManuelBaslangic {
+  personel_id: string;
+  sube_id: string;
+  islem_turu: "İşe Giriş" | "İşe Çıkış";
+  tarih: string;
+  saat: string;
+}
+
 export function ManuelFormu({
   personeller,
   subeler,
+  baslangic,
   onKapat,
   onKayit,
 }: {
   personeller: Personel[];
   subeler: Sube[];
+  baslangic?: ManuelBaslangic;
   onKapat: () => void;
   onKayit: () => void;
 }) {
@@ -518,6 +529,7 @@ export function ManuelFormu({
     tarih: yerelTarih(),
     saat: "18:00",
     yonetici_notu: "Personel çıkış basmayı unuttu, yönetici onayıyla eklendi.",
+    ...baslangic,
   });
 
   function personelSec(id: string) {
@@ -629,6 +641,98 @@ export function GelmeyenlerListesi({ liste, onKapat }: { liste: Personel[]; onKa
           </li>
         ))}
       </ul>
+      <div className="mt-5 flex justify-end">
+        <button type="button" className="btn btn-ana" onClick={onKapat}>
+          Kapat
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Çıkış basmayı unutanların listesi
+// ---------------------------------------------------------------------
+export interface CikisEksikSatiri {
+  personel: Personel;
+  /** Çıkışı olmayan girişin zamanı (ISO) */
+  giris: string;
+  subeId: string | null;
+  /** Vardiyaya göre planlanan çıkış (ISO); vardiyası yoksa null */
+  planliBitis: string | null;
+}
+
+function gunEtiketi(iso: string): string {
+  const tarih = yerelTarih(iso);
+  const gunAdi = GUN_ADLARI[new Date(`${tarih}T12:00:00+03:00`).getUTCDay()];
+  return `${kisaTarih(tarih)} ${gunAdi}`;
+}
+
+export function CikisEksikListesi({
+  liste,
+  onKapat,
+  onCikisEkle,
+}: {
+  liste: CikisEksikSatiri[];
+  onKapat: () => void;
+  onCikisEkle: (baslangic: ManuelBaslangic) => void;
+}) {
+  const bugun = yerelTarih();
+  return (
+    <Modal onKapat={onKapat} baslik={`Çıkış kaydı eksik (${liste.length})`}>
+      <p className="m2 mb-4 text-sm">
+        Bu personeller vardiyaları bittiği halde çıkış basmamış. Gerçek çıkış saatini öğrenip ekleyin; kayıt eklenince
+        hem bu listeden hem de personelin telefonundaki uyarıdan düşer.
+      </p>
+      {liste.length === 0 ? (
+        <p className="m3 text-sm">Çıkışı eksik kayıt yok.</p>
+      ) : (
+        <ul className="liste panel-ic overflow-hidden">
+          {liste.map((s) => {
+            const gunFarki = Math.round(
+              (Date.parse(`${bugun}T12:00:00+03:00`) - Date.parse(`${yerelTarih(s.giris)}T12:00:00+03:00`)) / 86400000
+            );
+            const onerilen = s.planliBitis ?? s.giris;
+            return (
+              <li key={`${s.personel.id}-${s.giris}`} className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <Avatar ad={s.personel.ad} soyad={s.personel.soyad} />
+                <div className="min-w-0 flex-1">
+                  <p className="m1 font-semibold">
+                    {s.personel.ad} {s.personel.soyad}
+                  </p>
+                  <p className="m3 text-xs">
+                    {gunEtiketi(s.giris)}, <span className="sayi">{yerelSaat(s.giris)}</span> girişi
+                    {s.personel.vardiyalar ? `, ${s.personel.vardiyalar.ad} vardiyası` : ""}
+                    {", "}
+                    {s.personel.subeler?.ad || "Şube atanmamış"}
+                  </p>
+                </div>
+                <Rozet ton={gunFarki >= 2 ? "hata" : "uyari"}>{gunFarki <= 0 ? "Bugün" : `${gunFarki} gün önce`}</Rozet>
+                <button
+                  type="button"
+                  className="btn btn-ikincil btn-kucuk"
+                  disabled={!s.subeId}
+                  title={s.subeId ? undefined : "Personelin şubesi yok; Manuel giriş/çıkış formundan ekleyin"}
+                  onClick={() =>
+                    s.subeId &&
+                    onCikisEkle({
+                      personel_id: s.personel.id,
+                      sube_id: s.subeId,
+                      islem_turu: "İşe Çıkış",
+                      tarih: yerelTarih(onerilen),
+                      // h23 biçimi: gece yarısı "24:00" değil "00:00" olur
+                      saat: yerelSaatSn(onerilen).slice(0, 5),
+                    })
+                  }
+                >
+                  <Ikon ad="arti" boyut={15} />
+                  Çıkış ekle
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
       <div className="mt-5 flex justify-end">
         <button type="button" className="btn btn-ana" onClick={onKapat}>
           Kapat

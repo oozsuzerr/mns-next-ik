@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } f
 import { supabase } from "../../lib/supabase";
 import { kisaTarih, selamlama, sureYaz, uzunTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
 import { Avatar, Ikon, Marka, Modal, useBildirim } from "../../components/ui";
+import { cikisiEksikGirisler, suankiGiris, type MesaiVardiya } from "../../lib/mesai";
 
 interface Sube {
   id: string;
@@ -32,7 +33,13 @@ interface Hareket {
 const TOKEN_ANAHTAR = "mns_token";
 const CIHAZ_ANAHTAR = "mns_device_id";
 const IPUCU_ANAHTAR = "mns_ipucu_kapali";
-const SAAT18 = 18 * 60 * 60 * 1000;
+
+/** "14 Eki Salı" */
+function gunMetni(iso: string): string {
+  return new Intl.DateTimeFormat("tr-TR", { timeZone: "Europe/Istanbul", day: "numeric", month: "short", weekday: "long" }).format(
+    new Date(iso)
+  );
+}
 
 function mesafeHesapla(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3;
@@ -162,6 +169,10 @@ function MobilGirisEkrani() {
   const [personel, setPersonel] = useState<Personel | null>(null);
   const [subeler, setSubeler] = useState<Sube[]>([]);
   const [gecmis, setGecmis] = useState<Hareket[]>([]);
+  // Personelin vardiyası (mobil_ozet döndürüyorsa); yoksa 18 saat kuralı kullanılır
+  const [vardiya, setVardiya] = useState<MesaiVardiya | null>(null);
+  // Mesai hesabı için son 31 günün hareketleri (mobil_ozet döndürüyorsa); yoksa ekrandaki son 5 işlem kullanılır
+  const [sonHareketler, setSonHareketler] = useState<Hareket[] | null>(null);
 
   const [enlem, setEnlem] = useState<number | null>(null);
   const [boylam, setBoylam] = useState<number | null>(null);
@@ -189,6 +200,8 @@ function MobilGirisEkrani() {
     setPersonel(null);
     setSubeler([]);
     setGecmis([]);
+    setVardiya(null);
+    setSonHareketler(null);
   }, []);
 
   const ozetYukle = useCallback(
@@ -206,6 +219,8 @@ function MobilGirisEkrani() {
       setPersonel(data.personel);
       setSubeler(data.subeler ?? []);
       setGecmis(data.gecmis ?? []);
+      setVardiya(data.vardiya ?? null);
+      setSonHareketler(data.son_hareketler ?? null);
       return true;
     },
     [oturumuTemizle]
@@ -281,13 +296,12 @@ function MobilGirisEkrani() {
 
   const sinirda = !!yakin && yakin.mesafe <= Number(yakin.sube.limit_metre);
 
-  // Mesai durumu: son hareket "giriş" ise ve 18 saatten eskiyse değilse içeridedir
-  const sonHareket = gecmis[0] ?? null;
-  const girisZamani =
-    sonHareket && sonHareket.islem_turu === "İşe Giriş" && simdi && simdi.getTime() - new Date(sonHareket.created_at).getTime() < SAAT18
-      ? new Date(sonHareket.created_at)
-      : null;
+  // Mesai durumu: son hareket "giriş" ise ve vardiyası (fazla mesai payıyla) bitmediyse içeridedir
+  const hesapHareketleri = sonHareketler ?? gecmis;
+  const girisZamani = simdi ? suankiGiris(hesapHareketleri, vardiya, simdi.getTime()) : null;
   const icerde = girisZamani !== null;
+  // Vardiyası bittiği halde çıkışı yapılmamış girişler (yönetici manuel çıkış ekleyene kadar uyarı gösterilir)
+  const cikisiEksikler = simdi ? cikisiEksikGirisler(hesapHareketleri, vardiya, simdi.getTime()) : [];
   const gecenDk = girisZamani && simdi ? Math.max(0, Math.floor((simdi.getTime() - girisZamani.getTime()) / 60000)) : 0;
 
   // Durum değişince doğru işlemi önceden seç (önceki değer karşılaştırılarak, render sırasında)
@@ -558,6 +572,34 @@ function MobilGirisEkrani() {
         </p>
         <p className="m2 mt-1 text-sm">{uzunTarih()}</p>
       </section>
+
+      {/* Çıkışı unutulan günler */}
+      {cikisiEksikler.length > 0 && (
+        <section
+          className="flex items-start gap-3 rounded-2xl p-4 text-sm"
+          style={{ background: "var(--hata-acik)", color: "var(--hata)" }}
+          role="alert"
+        >
+          <Ikon ad="uyari" boyut={20} className="mt-0.5 flex-none" />
+          <div className="flex-1">
+            <p className="font-semibold">
+              {cikisiEksikler.length === 1
+                ? `${gunMetni(cikisiEksikler[0].created_at)} günü işten çıkış kaydınız yok.`
+                : "Şu günlerde işten çıkış kaydınız yok:"}
+            </p>
+            {cikisiEksikler.length > 1 && (
+              <ul className="mt-1 list-disc pl-5">
+                {cikisiEksikler.map((h) => (
+                  <li key={h.id}>
+                    {gunMetni(h.created_at)} (<span className="sayi">{yerelSaat(h.created_at)}</span> girişi)
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-1">Lütfen yöneticinize bildiriniz. Yönetici çıkışınızı ekleyince bu uyarı kalkar.</p>
+          </div>
+        </section>
+      )}
 
       {/* Kadran */}
       <section>

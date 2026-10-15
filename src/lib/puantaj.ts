@@ -1,4 +1,5 @@
 import { ayGunSayisi, GUN_ADLARI, gunStr, haftaGunu, planAni, sureYaz, yerelSaat, yerelTarih } from "./tarih";
+import { MAKS_VARDIYA_MS, mesaiSonSiniri } from "./mesai";
 
 // ---------------------------------------------------------------------
 // Tipler
@@ -98,7 +99,6 @@ export interface PuantajGirdi {
 // ---------------------------------------------------------------------
 // Kurallar (gerekirse buradan değiştirin)
 // ---------------------------------------------------------------------
-const MAKS_VARDIYA_MS = 18 * 60 * 60 * 1000; // giriş-çıkış arası en fazla 18 saat
 const GECIKME_TOLERANS_DK = 5; // 5 dk'ya kadar gecikme sayılmaz
 const MESAI_TOLERANS_DK = 15; // vardiya bitişinden 15 dk sonrası mesai sayılır
 const MOLA_ESIGI_DK = 240; // 4 saatten uzun çalışmada mola düşülür
@@ -214,8 +214,9 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
 
       const oturum = gunHaritasi.get(tarih) ?? [];
       const tam = oturum.filter((o) => o.giris && o.cikis);
+      // Çıkışsız giriş, vardiya bitişi + fazla mesai payı dolana kadar "devam ediyor" sayılır (bkz. lib/mesai.ts)
       const devamEdiyor = (o: Oturum) =>
-        !!o.giris && !o.cikis && g.simdi.getTime() - o.giris.getTime() < MAKS_VARDIYA_MS;
+        !!o.giris && !o.cikis && g.simdi.getTime() < mesaiSonSiniri(o.giris, vardiya);
       const mesaide = oturum.some(devamEdiyor);
       const eksik = oturum.filter((o) => (!o.giris || !o.cikis) && !devamEdiyor(o));
 
