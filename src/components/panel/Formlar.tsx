@@ -677,7 +677,8 @@ export function CikisEksikListesi({
 }: {
   liste: CikisEksikSatiri[];
   onKapat: () => void;
-  onCikisEkle: (baslangic: ManuelBaslangic) => void;
+  /** Verilmezse (manuel giriş/çıkış yetkisi yok) "Çıkış ekle" gösterilmez */
+  onCikisEkle?: (baslangic: ManuelBaslangic) => void;
 }) {
   const bugun = yerelTarih();
   return (
@@ -710,6 +711,7 @@ export function CikisEksikListesi({
                   </p>
                 </div>
                 <Rozet ton={gunFarki >= 2 ? "hata" : "uyari"}>{gunFarki <= 0 ? "Bugün" : `${gunFarki} gün önce`}</Rozet>
+                {onCikisEkle && (
                 <button
                   type="button"
                   className="btn btn-ikincil btn-kucuk"
@@ -730,6 +732,7 @@ export function CikisEksikListesi({
                   <Ikon ad="arti" boyut={15} />
                   Çıkış ekle
                 </button>
+                )}
               </li>
             );
           })}

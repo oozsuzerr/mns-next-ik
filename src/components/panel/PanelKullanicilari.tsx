@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
-import { hataYaz, type Sube } from "../../lib/tipler";
+import { YETKILER, hataYaz, type Sube, type Yetki } from "../../lib/tipler";
 import { kisaTarih, yerelTarih } from "../../lib/tarih";
 import { Bos, Ikon, Iskelet, Modal, Rozet, useBildirim } from "../ui";
 
@@ -14,7 +14,10 @@ interface Kullanici {
   ben: boolean;
   son_giris: string | null;
   subeler: string[];
+  yetkiler?: Yetki[];
 }
+
+const VARSAYILAN_YETKILER: Yetki[] = YETKILER.filter((y) => y.varsayilan).map((y) => y.anahtar);
 
 function kullaniciHatasi(err: unknown): string {
   const metin = hataYaz(err);
@@ -131,11 +134,20 @@ export default function PanelKullanicilari({ subeler }: { subeler: Sube[] }) {
                     {k.son_giris ? `, son giriş ${kisaTarih(yerelTarih(k.son_giris))}` : ", henüz giriş yapmadı"}
                   </p>
                   {k.rol === "SUBE" && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {k.subeler.map((id) => (
-                        <Rozet key={id}>{subeAdi(id)}</Rozet>
-                      ))}
-                    </div>
+                    <>
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {k.subeler.map((id) => (
+                          <Rozet key={id}>{subeAdi(id)}</Rozet>
+                        ))}
+                      </div>
+                      <p className="m2 mt-1 text-xs">
+                        {(k.yetkiler ?? []).length === 0
+                          ? "Yalnızca görüntüleme"
+                          : YETKILER.filter((y) => (k.yetkiler ?? []).includes(y.anahtar))
+                              .map((y) => y.ad)
+                              .join(", ")}
+                      </p>
+                    </>
                   )}
                 </div>
                 <Rozet ton={k.rol === "GENEL" ? "izin" : "giris"}>{k.rol === "GENEL" ? "Genel yönetici" : "Şube müdürü"}</Rozet>
@@ -186,6 +198,7 @@ function KullaniciFormu({
   const [sifre, setSifre] = useState("");
   const [rol, setRol] = useState<"GENEL" | "SUBE">(mevcut?.rol ?? "SUBE");
   const [secili, setSecili] = useState<string[]>(mevcut?.subeler ?? []);
+  const [yetkiler, setYetkiler] = useState<Yetki[]>(mevcut ? mevcut.yetkiler ?? [] : VARSAYILAN_YETKILER);
   const [yukleniyor, setYukleniyor] = useState(false);
 
   async function kaydet(e: FormEvent) {
@@ -203,7 +216,14 @@ function KullaniciFormu({
         const cevap = await fetch("/api/panel-kullanici", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
-          body: JSON.stringify({ eposta: temizEposta, sifre, ad, rol, subeler: rol === "SUBE" ? secili : [] }),
+          body: JSON.stringify({
+            eposta: temizEposta,
+            sifre,
+            ad,
+            rol,
+            subeler: rol === "SUBE" ? secili : [],
+            yetkiler: rol === "SUBE" ? yetkiler : [],
+          }),
         });
         const sonuc = (await cevap.json().catch(() => ({}))) as { hata?: string; detay?: string; yeniHesap?: boolean };
         if (!cevap.ok) throw new Error(sunucuHatasi(sonuc.hata, sonuc.detay));
@@ -216,6 +236,7 @@ function KullaniciFormu({
           p_ad: ad,
           p_rol: rol,
           p_subeler: rol === "SUBE" ? secili : [],
+          p_yetkiler: rol === "SUBE" ? yetkiler : [],
         });
         if (error) throw error;
       }
@@ -287,6 +308,28 @@ function KullaniciFormu({
                 </label>
               ))}
             </div>
+            <label className="etiket mt-4">Yetkileri</label>
+            <div className="panel-ic">
+              {YETKILER.map((y) => (
+                <label key={y.anahtar} className="flex cursor-pointer items-start gap-3 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={yetkiler.includes(y.anahtar)}
+                    onChange={(e) =>
+                      setYetkiler(e.target.checked ? [...yetkiler, y.anahtar] : yetkiler.filter((x) => x !== y.anahtar))
+                    }
+                  />
+                  <span>
+                    <span className="m1 block text-sm font-semibold">{y.ad}</span>
+                    <span className="m3 block text-xs">{y.aciklama}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="ipucu">
+              Personeli, puantajı ve hareketleri görmek her zaman açıktır. Hiçbiri seçilmezse salt okuma kullanıcısı olur.
+            </p>
           </div>
         ) : (
           <p className="m2 text-sm">Genel yönetici tüm şubeleri, personeli ve ayarları yönetir.</p>

@@ -13,7 +13,7 @@ function Islemler({
 }: {
   p: Personel;
   onPin?: (p: Personel) => void;
-  onCihaz: (p: Personel) => void;
+  onCihaz?: (p: Personel) => void;
   onAktif?: (p: Personel) => void;
 }) {
   return (
@@ -24,7 +24,7 @@ function Islemler({
           PIN
         </button>
       )}
-      {p.cihaz_id && (
+      {p.cihaz_id && onCihaz && (
         <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onCihaz(p)}>
           <Ikon ad="kilitac" boyut={14} />
           Kilidi aç
@@ -61,7 +61,7 @@ export default function PersonelSekmesi({
   /** Verilmezse (şube müdürü) ilgili düğmeler gizlenir */
   onYeni?: () => void;
   onPin?: (p: Personel) => void;
-  onCihaz: (p: Personel) => void;
+  onCihaz?: (p: Personel) => void;
   onAktif?: (p: Personel) => void;
 }) {
   const [ara, setAra] = useState("");

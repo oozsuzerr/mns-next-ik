@@ -3,7 +3,7 @@
 // service_role anahtarıyla açılır. Anahtar tarayıcıya hiç gönderilmez.
 //
 // İstek: POST, "Authorization: Bearer <yöneticinin oturum anahtarı>"
-// Gövde: { eposta, sifre, ad, rol: "GENEL" | "SUBE", subeler: string[] }
+// Gövde: { eposta, sifre, ad, rol: "GENEL" | "SUBE", subeler: string[], yetkiler: string[] }
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { supabaseAnonKey, supabaseUrl, temizle } from "../../../lib/supabase";
 
@@ -30,7 +30,7 @@ export async function POST(istek: Request) {
   if (!servisAnahtari) return yanit(500, { hata: "SUNUCU_ANAHTARI_YOK" });
 
   // 2) Girdileri doğrula
-  let govde: { eposta?: unknown; sifre?: unknown; ad?: unknown; rol?: unknown; subeler?: unknown };
+  let govde: { eposta?: unknown; sifre?: unknown; ad?: unknown; rol?: unknown; subeler?: unknown; yetkiler?: unknown };
   try {
     govde = await istek.json();
   } catch {
@@ -41,6 +41,8 @@ export async function POST(istek: Request) {
   const ad = typeof govde.ad === "string" ? govde.ad.trim().slice(0, 100) : "";
   const rol = govde.rol === "GENEL" || govde.rol === "SUBE" ? govde.rol : null;
   const subeler = Array.isArray(govde.subeler) ? govde.subeler.filter((s): s is string => typeof s === "string") : [];
+  // Geçerlilik veritabanında da denetlenir (yonetici_kaydet)
+  const yetkiler = Array.isArray(govde.yetkiler) ? govde.yetkiler.filter((s): s is string => typeof s === "string") : [];
 
   if (!EPOSTA.test(eposta)) return yanit(400, { hata: "EPOSTA_GECERSIZ" });
   if (sifre.length < 8 || sifre.length > 72) return yanit(400, { hata: "SIFRE_GECERSIZ" });
@@ -72,6 +74,7 @@ export async function POST(istek: Request) {
     p_ad: ad,
     p_rol: rol,
     p_subeler: rol === "SUBE" ? subeler : [],
+    p_yetkiler: rol === "SUBE" ? yetkiler : [],
   });
   if (kayitHata) {
     // Yetkilendirme başarısızsa az önce açılan hesabı geri al; yarım kalmış hesap bırakma

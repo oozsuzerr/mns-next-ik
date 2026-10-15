@@ -16,7 +16,7 @@ import {
 } from "../../lib/vardiyaPlani";
 import { Avatar, Bos, Ikon, Iskelet, Modal, useBildirim } from "../ui";
 
-type Gorunum = "hafta" | "ay";
+type Gorunum = "gun" | "hafta" | "ay";
 
 // Her vardiyaya sırasına göre bir renk tonu verilir
 const TONLAR = ["izin", "giris", "cikis", "uyari"] as const;
@@ -27,6 +27,7 @@ function ayinSonGunu(ay: string): string {
 }
 
 function aralikBul(gorunum: Gorunum, baslangic: string): { bas: string; son: string } {
+  if (gorunum === "gun") return { bas: baslangic, son: baslangic };
   if (gorunum === "hafta") return { bas: baslangic, son: gunEkle(baslangic, 6) };
   return { bas: baslangic, son: ayinSonGunu(baslangic.slice(0, 7)) };
 }
@@ -100,19 +101,24 @@ export default function VardiyaPlani({
   personeller,
   vardiyalar,
   subeFiltre,
+  duzenlenebilir = true,
   onDegisti,
 }: {
   personeller: Personel[];
   vardiyalar: Vardiya[];
   subeFiltre: string;
   /** Plan kaydedilince çağrılır (panel puantajı yenilesin diye) */
+  /** false ise (plan yetkisi yok) plan yalnızca görüntülenir */
+  duzenlenebilir?: boolean;
   onDegisti?: () => void;
 }) {
   const { bildir, onayla } = useBildirim();
   const bugun = yerelTarih();
 
-  const [gorunum, setGorunum] = useState<Gorunum>("hafta");
-  const [baslangic, setBaslangic] = useState(() => haftaBasi(bugun));
+  const [gorunum, setGorunum] = useState<Gorunum>(() =>
+    typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches ? "gun" : "hafta"
+  );
+  const [baslangic, setBaslangic] = useState(() => (gorunum === "gun" ? bugun : haftaBasi(bugun)));
   const [planlar, setPlanlar] = useState<PlanSatiri[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
@@ -162,7 +168,8 @@ export default function VardiyaPlani({
   }
 
   function kaydir(yon: 1 | -1) {
-    if (gorunum === "hafta") aralikDegistir("hafta", gunEkle(baslangic, 7 * yon));
+    if (gorunum === "gun") aralikDegistir("gun", gunEkle(baslangic, yon));
+    else if (gorunum === "hafta") aralikDegistir("hafta", gunEkle(baslangic, 7 * yon));
     else {
       const [y, m] = baslangic.split("-").map(Number);
       const d = new Date(Date.UTC(y, m - 1 + yon, 1));
@@ -171,12 +178,16 @@ export default function VardiyaPlani({
   }
 
   function bugune() {
-    aralikDegistir(gorunum, gorunum === "hafta" ? haftaBasi(bugun) : `${bugun.slice(0, 7)}-01`);
+    aralikDegistir(
+      gorunum,
+      gorunum === "gun" ? bugun : gorunum === "hafta" ? haftaBasi(bugun) : `${bugun.slice(0, 7)}-01`
+    );
   }
 
   function gorunumSec(g: Gorunum) {
     // Haftadan aya geçerken o haftanın ayı, aydan haftaya geçerken (bugün o aydaysa) bu hafta açılır
     if (g === "ay") aralikDegistir("ay", `${baslangic.slice(0, 7)}-01`);
+    else if (g === "gun") aralikDegistir("gun", bugun >= bas && bugun <= son ? bugun : bas);
     else aralikDegistir("hafta", bugun.startsWith(baslangic.slice(0, 7)) ? haftaBasi(bugun) : haftaBasi(baslangic));
   }
 
@@ -269,13 +280,20 @@ export default function VardiyaPlani({
   }
 
   const baslik =
-    gorunum === "hafta" ? `${kisaTarih(bas)} - ${kisaTarih(son)} ${son.slice(0, 4)}` : ayAdi(baslangic.slice(0, 7));
+    gorunum === "gun"
+      ? `${kisaTarih(bas)} ${GUN_ADLARI[haftaGunu(bas)]}${bas === bugun ? " (bugün)" : ""}`
+      : gorunum === "hafta"
+      ? `${kisaTarih(bas)} - ${kisaTarih(son)} ${son.slice(0, 4)}`
+      : ayAdi(baslangic.slice(0, 7));
 
   return (
     <div className="space-y-4">
       {/* Araç çubuğu */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="segment" style={{ width: 180 }} role="tablist" aria-label="Görünüm">
+        <div className="segment segment-3" style={{ width: 240 }} role="tablist" aria-label="Görünüm">
+          <button type="button" role="tab" aria-selected={gorunum === "gun"} data-aktif={gorunum === "gun"} onClick={() => gorunumSec("gun")}>
+            Günlük
+          </button>
           <button type="button" role="tab" aria-selected={gorunum === "hafta"} data-aktif={gorunum === "hafta"} onClick={() => gorunumSec("hafta")}>
             Haftalık
           </button>
@@ -301,6 +319,7 @@ export default function VardiyaPlani({
           <Ikon ad="ara" boyut={16} />
           <input className="girdi girdi-sik" placeholder="İsim veya sicil ara" value={ara} onChange={(e) => setAra(e.target.value)} aria-label="Personel ara" />
         </div>
+        {duzenlenebilir && (
         <div className="flex gap-2">
           {gorunum === "hafta" && (
             <button type="button" className="btn btn-ikincil btn-kucuk" onClick={gecenHaftayiKopyala} disabled={yukleniyor || !!hata}>
@@ -312,7 +331,9 @@ export default function VardiyaPlani({
             Toplu atama
           </button>
         </div>
+        )}
       </div>
+      {!duzenlenebilir && <p className="m2 text-sm">Planı görüntüleyebilirsiniz; değiştirme yetkiniz yok.</p>}
 
       {/* Açıklama */}
       <div className="m2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -369,6 +390,50 @@ export default function VardiyaPlani({
         ) : vardiyalar.length === 0 ? (
           <Bos ikon="vardiya" baslik="Önce vardiya tanımlayın" metin="Plan yapabilmek için Tanımlar bölümünden vardiya ekleyin." />
         ) : (
+          gorunum === "gun" ? (
+          <ul className="liste" style={{ opacity: yukleniyor ? 0.6 : 1, transition: "opacity 0.15s" }}>
+            {gorunenPersonel.map((p) => {
+              const anahtar = `${p.id}|${bas}`;
+              const gp = gunPlani(harita.get(anahtar), bas, p.vardiyalar ?? vardiyalar[0] ?? null, vardiyaBul);
+              const uy = hucreUyarilari.get(anahtar);
+              const soluk = gp.kaynak === "varsayilan" ? " plan-cip-varsayilan" : "";
+              return (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    className="plan-gun-satir"
+                    data-uyari={!!uy}
+                    disabled={!duzenlenebilir}
+                    onClick={() => setHucre({ personel: p, tarih: bas })}
+                  >
+                    <Avatar ad={p.ad} soyad={p.soyad} boyut={34} />
+                    <span className="min-w-0 flex-1 text-left">
+                      <span className="m1 block truncate font-semibold">
+                        {p.ad} {p.soyad}
+                      </span>
+                      <span className="m3 block truncate text-xs">
+                        {uy ? uy.map((u) => u.mesaj).join("; ") : p.subeler?.ad || "Şube yok"}
+                      </span>
+                    </span>
+                    <span className="flex flex-col items-end gap-1">
+                      {gp.tatil ? (
+                        <span className={`plan-cip plan-cip-tatil${soluk}`}>Tatil</span>
+                      ) : gp.vardiyalar.length === 0 ? (
+                        <span className="m3">-</span>
+                      ) : (
+                        gp.vardiyalar.map((v) => (
+                          <span key={v.id} className={`plan-cip plan-cip-${tonBul(v.id)}${soluk}`}>
+                            {v.ad} {v.baslangic_saat.slice(0, 5)}
+                          </span>
+                        ))
+                      )}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          ) : (
           <div className="overflow-x-auto" style={{ opacity: yukleniyor ? 0.6 : 1, transition: "opacity 0.15s" }}>
             <table className={`plan-tablo ${gorunum === "ay" ? "plan-tablo-ay" : ""}`}>
               <thead>
@@ -412,6 +477,7 @@ export default function VardiyaPlani({
                             className="plan-hucre"
                             data-uyari={!!uy}
                             title={uy?.map((u) => u.mesaj).join("\n")}
+                            disabled={!duzenlenebilir}
                             onClick={() => setHucre({ personel: p, tarih: t })}
                             aria-label={`${p.ad} ${p.soyad}, ${kisaTarih(t)} planını düzenle`}
                           >
@@ -435,6 +501,7 @@ export default function VardiyaPlani({
               </tbody>
             </table>
           </div>
+          )
         )}
       </div>
 

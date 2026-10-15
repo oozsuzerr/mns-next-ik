@@ -17,6 +17,7 @@ import {
   type Sekme,
   type Sube,
   type Vardiya,
+  type Yetki,
   type YoneticiBilgisi,
 } from "../lib/tipler";
 import { ayAdi, ayAraligi, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
@@ -32,6 +33,7 @@ import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
 import VardiyaPlani from "../components/panel/VardiyaPlani";
 import PanelKullanicilari from "../components/panel/PanelKullanicilari";
+import IslemGecmisi from "../components/panel/IslemGecmisi";
 import {
   CikisEksikListesi,
   GelmeyenlerListesi,
@@ -122,9 +124,18 @@ export default function Home() {
  */
 async function yetkiGetir(): Promise<YoneticiBilgisi | false> {
   const { data, error } = await supabase.rpc("yonetici_bilgisi");
-  if (!error) return data ? (data as YoneticiBilgisi) : false;
+  if (!error) {
+    if (!data) return false;
+    const b = data as Partial<YoneticiBilgisi> & Pick<YoneticiBilgisi, "rol">;
+    return {
+      rol: b.rol,
+      ad: b.ad ?? null,
+      subeler: b.subeler ?? [],
+      yetkiler: b.yetkiler ?? (b.rol === "SUBE" ? ["plan", "izin", "manuel", "cihaz"] : []),
+    };
+  }
   const eski = await supabase.rpc("is_admin");
-  return !eski.error && eski.data === true ? { rol: "GENEL", ad: null, subeler: [] } : false;
+  return !eski.error && eski.data === true ? { rol: "GENEL", ad: null, subeler: [], yetkiler: [] } : false;
 }
 
 function YoneticiGiris() {
@@ -238,6 +249,49 @@ function YoneticiGiris() {
 // =====================================================================
 // 2) GENEL BAKIŞ
 // =====================================================================
+/** Telefonda genel bakışın üstünde: en sık yapılan işlere tek dokunuşla ulaşım */
+function HizliIslemler({
+  cikisEksik,
+  bekleyen,
+  gelmeyen,
+  onCikisEksik,
+  onTalepler,
+  onGelmeyenler,
+  onManuel,
+  onPlan,
+}: {
+  cikisEksik: number;
+  bekleyen: number;
+  gelmeyen: number;
+  onCikisEksik: () => void;
+  onTalepler: () => void;
+  onGelmeyenler: () => void;
+  onManuel?: () => void;
+  onPlan: () => void;
+}) {
+  const kutular: { etiket: string; sayi?: number; ikon: IkonAdi; acil?: boolean; eylem: () => void }[] = [
+    { etiket: "Eksik çıkış", sayi: cikisEksik, ikon: "uyari", acil: cikisEksik > 0, eylem: onCikisEksik },
+    { etiket: "Onay bekleyen", sayi: bekleyen, ikon: "talepler", acil: bekleyen > 0, eylem: onTalepler },
+    { etiket: "Henüz gelmeyen", sayi: gelmeyen, ikon: "personel", eylem: onGelmeyenler },
+    onManuel
+      ? { etiket: "Manuel giriş/çıkış", ikon: "kalem", eylem: onManuel }
+      : { etiket: "Vardiya planı", ikon: "vardiya", eylem: onPlan },
+  ];
+  return (
+    <section className="grid grid-cols-2 gap-3 lg:hidden" aria-label="Hızlı işlemler">
+      {kutular.map((k) => (
+        <button key={k.etiket} type="button" className="hizli-kutu" data-acil={!!k.acil} onClick={k.eylem}>
+          <span className="flex items-center justify-between">
+            <Ikon ad={k.ikon} boyut={20} />
+            {k.sayi !== undefined && <span className="baslik-font sayi text-2xl">{k.sayi}</span>}
+          </span>
+          <span className="text-sm font-semibold">{k.etiket}</span>
+        </button>
+      ))}
+    </section>
+  );
+}
+
 function DikkatListesi({
   cikisEksik,
   bekleyen,
@@ -351,7 +405,7 @@ async function paneliGetir(seciliAy: string) {
   const planBas = [yerelTarih(aralikBas), gunEkle(bugun, -CIKIS_EKSIK_GUN - 1)].sort()[0];
   const planSon = [yerelTarih(aralikSon), gunEkle(bugun, 1)].sort()[1];
 
-  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar] = await Promise.all([
+  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD] = await Promise.all([
     supabase.from("subeler").select("*").order("created_at", { ascending: true }),
     supabase.from("vardiyalar").select("*").order("created_at", { ascending: true }),
     tumunuGetir<Personel>((a, b) =>
@@ -401,6 +455,8 @@ async function paneliGetir(seciliAy: string) {
         .order("id")
         .range(a, b)
     ).catch(() => [] as PlanSatiri[]),
+    // Kapanmış aylar (tablo yoksa boş)
+    Promise.resolve(supabase.from("ay_kilitleri").select("ay")).catch(() => ({ data: null })),
   ]);
 
   if (subeD.error) throw subeD.error;
@@ -416,6 +472,7 @@ async function paneliGetir(seciliAy: string) {
     izinler: izler,
     resmiTatiller: (tatD.data ?? []) as ResmiTatil[],
     planlar,
+    kilitliAylar: ((kilitD.data ?? []) as { ay: string }[]).map((k) => k.ay),
   };
 }
 
@@ -423,6 +480,23 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const { bildir, onayla } = useBildirim();
   // Şube müdürü yalnızca kendi şubelerini görür (veritabanı kuralları da bunu zorunlu kılar)
   const genel = yetki.rol === "GENEL";
+  /** Genel yönetici her şeye, şube müdürü yalnızca kendisine verilen yetkilere sahiptir */
+  const yetkili = (y: Yetki) => genel || yetki.yetkiler.includes(y);
+
+  // Panel telefona "ana ekrana ekle" ile eklenirken personel uygulaması (/mobil) yerine
+  // panel açılsın diye bu sayfada ayrı uygulama tanımı kullanılır
+  useEffect(() => {
+    const baglanti = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    const baslik = document.querySelector<HTMLMetaElement>('meta[name="apple-mobile-web-app-title"]');
+    const eskiAdres = baglanti?.getAttribute("href");
+    const eskiBaslik = baslik?.getAttribute("content");
+    baglanti?.setAttribute("href", "/panel.webmanifest");
+    baslik?.setAttribute("content", "MNS Yönetim");
+    return () => {
+      if (baglanti && eskiAdres) baglanti.setAttribute("href", eskiAdres);
+      if (baslik && eskiBaslik) baslik.setAttribute("content", eskiBaslik);
+    };
+  }, []);
   const bugunTarih = yerelTarih();
 
   const [aktifSekme, setAktifSekme] = useState<Sekme>("bakis");
@@ -434,6 +508,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [izinler, setIzinler] = useState<Izin[]>([]);
   const [resmiTatiller, setResmiTatiller] = useState<ResmiTatil[]>([]);
   const [planlar, setPlanlar] = useState<PlanSatiri[]>([]);
+  const [kilitliAylar, setKilitliAylar] = useState<string[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState<string | null>(null);
   // "İçeride" hesabındaki 18 saat sınırı için son veri çekme anı
@@ -444,7 +519,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [form, setForm] = useState<FormDurumu>(null);
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar">("plan");
-  const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar">("personel");
+  const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
 
   // -------------------------------------------------------------------
   // Veri çekme
@@ -462,6 +537,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           setIzinler(v.izinler);
           setResmiTatiller(v.resmiTatiller);
           setPlanlar(v.planlar);
+          setKilitliAylar(v.kilitliAylar);
           setVeriZamani(Date.now());
           setHataMesaji(null);
         })
@@ -478,6 +554,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       setIzinler,
       setResmiTatiller,
       setPlanlar,
+      setKilitliAylar,
       setVeriZamani,
       setHataMesaji,
       setYukleniyor,
@@ -768,6 +845,27 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   // -------------------------------------------------------------------
   // İşlemler
   // -------------------------------------------------------------------
+  async function ayKilitDegistir() {
+    const kilitli = kilitliAylar.includes(seciliAy);
+    const tamam = await onayla({
+      baslik: kilitli ? `${ayAdi(seciliAy)} tekrar açılsın mı?` : `${ayAdi(seciliAy)} kapatılsın mı?`,
+      metin: kilitli
+        ? "Açılan ayda giriş/çıkış, izin ve vardiya planı yeniden değiştirilebilir. İşlem geçmişine kaydedilir."
+        : "Kapatılan aya ait giriş/çıkış, izin ve vardiya planı panelden değiştirilemez (genel yönetici dahil). Maaş hesaplandıktan sonra kapatın. Personelin mobilden giriş/çıkışı etkilenmez.",
+      onayEtiketi: kilitli ? "Ayı aç" : "Ayı kapat",
+      tehlikeli: kilitli,
+    });
+    if (!tamam) return;
+    const { error } = kilitli
+      ? await supabase.from("ay_kilitleri").delete().eq("ay", seciliAy)
+      : await supabase.from("ay_kilitleri").insert({ ay: seciliAy });
+    if (error) bildir(hataYaz(error), "hata");
+    else {
+      bildir(kilitli ? "Ay açıldı." : "Ay kapatıldı.", "basari");
+      yenile();
+    }
+  }
+
   async function izinDurumGuncelle(id: string, yeniDurum: "ONAYLANDI" | "REDDEDILDI") {
     try {
       const { error } = await supabase.from("izinler").update({ durum: yeniDurum }).eq("id", id);
@@ -931,6 +1029,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               ))}
             </select>
 
+            {yetkili("rapor") && (
             <AcilirMenu
               etiket="Rapor indir"
               tetikleyici={
@@ -967,7 +1066,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 </>
               )}
             </AcilirMenu>
+            )}
 
+            {(yetkili("personel") || yetkili("manuel") || yetkili("izin")) && (
             <AcilirMenu
               etiket="Ekle"
               sinif="btn btn-ana"
@@ -980,7 +1081,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             >
               {(kapat) => (
                 <>
-                  {genel && (
+                  {yetkili("personel") && (
                     <button
                       type="button"
                       role="menuitem"
@@ -994,33 +1095,38 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                       Yeni personel
                     </button>
                   )}
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="menu-oge"
-                    onClick={() => {
-                      kapat();
-                      setForm({ tur: "manuel" });
-                    }}
-                  >
-                    <Ikon ad="kalem" boyut={16} />
-                    Manuel giriş / çıkış
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="menu-oge"
-                    onClick={() => {
-                      kapat();
-                      setForm({ tur: "izin" });
-                    }}
-                  >
-                    <Ikon ad="rapor" boyut={16} />
-                    İzin veya rapor
-                  </button>
+                  {yetkili("manuel") && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="menu-oge"
+                      onClick={() => {
+                        kapat();
+                        setForm({ tur: "manuel" });
+                      }}
+                    >
+                      <Ikon ad="kalem" boyut={16} />
+                      Manuel giriş / çıkış
+                    </button>
+                  )}
+                  {yetkili("izin") && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="menu-oge"
+                      onClick={() => {
+                        kapat();
+                        setForm({ tur: "izin" });
+                      }}
+                    >
+                      <Ikon ad="rapor" boyut={16} />
+                      İzin veya rapor
+                    </button>
+                  )}
                 </>
               )}
             </AcilirMenu>
+            )}
 
             <button type="button" className="btn btn-hayalet btn-ikon lg:hidden" onClick={onCikis} aria-label="Çıkış yap">
               <Ikon ad="cikis" />
@@ -1046,12 +1152,22 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
         {aktifSekme === "bakis" && (
           <div className="space-y-6">
+            <HizliIslemler
+              cikisEksik={cikisEksikler.length}
+              bekleyen={bekleyenSayisi}
+              gelmeyen={bugunOzet.gelmedi.length}
+              onCikisEksik={() => setForm({ tur: "cikisEksik" })}
+              onTalepler={() => setAktifSekme("talepler")}
+              onGelmeyenler={() => setForm({ tur: "gelmeyen" })}
+              onManuel={yetkili("manuel") ? () => setForm({ tur: "manuel" }) : undefined}
+              onPlan={() => setAktifSekme("vardiya")}
+            />
             <BugunSerit ozet={bugunOzet} yukleniyor={yukleniyor} onGelmeyenler={() => setForm({ tur: "gelmeyen" })} />
             <DikkatListesi
               cikisEksik={cikisEksikler.length}
               onCikisEksik={() => setForm({ tur: "cikisEksik" })}
               bekleyen={bekleyenSayisi}
-              pinsiz={genel ? pinsizSayisi : 0}
+              pinsiz={yetkili("pin") ? pinsizSayisi : 0}
               eksik={eksikToplam}
               devamsiz={devamsizToplam}
               donem={ayAdi(seciliAy)}
@@ -1068,15 +1184,17 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             onSec={setSeciliPersonelId}
             onYenile={yukleyerekGetir}
             yukleniyor={yukleniyor}
+            kilitli={kilitliAylar.includes(seciliAy)}
+            onKilit={genel ? ayKilitDegistir : undefined}
           />
         )}
 
         {aktifSekme === "talepler" && (
           <TaleplerSekmesi
             izinler={izinler}
-            onDurum={izinDurumGuncelle}
-            onSil={izinSil}
-            onYeni={() => setForm({ tur: "izin" })}
+            onDurum={yetkili("izin") ? izinDurumGuncelle : undefined}
+            onSil={yetkili("izin") ? izinSil : undefined}
+            onYeni={yetkili("izin") ? () => setForm({ tur: "izin" }) : undefined}
           />
         )}
 
@@ -1093,7 +1211,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         {aktifSekme === "personel" && (
           <div className="space-y-4">
             {genel && (
-              <div className="segment" style={{ maxWidth: 320 }} role="tablist" aria-label="Personel bölümü">
+              <div className="segment segment-3" style={{ maxWidth: 460 }} role="tablist" aria-label="Personel bölümü">
                 <button
                   type="button"
                   role="tab"
@@ -1112,17 +1230,28 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 >
                   Panel kullanıcıları
                 </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={personelGorunum === "gecmis"}
+                  data-aktif={personelGorunum === "gecmis"}
+                  onClick={() => setPersonelGorunum("gecmis")}
+                >
+                  İşlem geçmişi
+                </button>
               </div>
             )}
             {genel && personelGorunum === "kullanicilar" ? (
               <PanelKullanicilari subeler={subeler} />
+            ) : genel && personelGorunum === "gecmis" ? (
+              <IslemGecmisi personeller={personeller} />
             ) : (
               <PersonelSekmesi
                 personeller={filtrelenmisPersoneller}
-                onYeni={genel ? () => setForm({ tur: "personel" }) : undefined}
-                onPin={genel ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
-                onCihaz={cihazSifirla}
-                onAktif={genel ? personelAktifDegistir : undefined}
+                onYeni={yetkili("personel") ? () => setForm({ tur: "personel" }) : undefined}
+                onPin={yetkili("pin") ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
+                onCihaz={yetkili("cihaz") ? cihazSifirla : undefined}
+                onAktif={yetkili("personel") ? personelAktifDegistir : undefined}
               />
             )}
           </div>
@@ -1155,6 +1284,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 personeller={personeller}
                 vardiyalar={vardiyalar}
                 subeFiltre={seciliSubeFiltre}
+                duzenlenebilir={yetkili("plan")}
                 onDegisti={yenile}
               />
             ) : (
@@ -1212,7 +1342,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         <CikisEksikListesi
           liste={cikisEksikler}
           onKapat={() => setForm(null)}
-          onCikisEkle={(baslangic) => setForm({ tur: "manuel", baslangic })}
+          onCikisEkle={yetkili("manuel") ? (baslangic) => setForm({ tur: "manuel", baslangic }) : undefined}
         />
       )}
     </div>

@@ -1,0 +1,17 @@
+{
+  "name": "MNS Next IK - Yönetim Paneli",
+  "short_name": "MNS Yönetim",
+  "description": "Yönetici ve şube müdürü paneli",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#11253a",
+  "theme_color": "#11253a",
+  "lang": "tr",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

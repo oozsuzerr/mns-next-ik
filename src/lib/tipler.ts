@@ -78,7 +78,22 @@ export interface YoneticiBilgisi {
   rol: "GENEL" | "SUBE";
   ad: string | null;
   subeler: string[];
+  /** Şube müdürünün açık yetkileri (genel yöneticide boş; o her şeye yetkilidir) */
+  yetkiler: Yetki[];
 }
+
+/** Şube müdürüne tek tek verilebilen yetkiler (veritabanındaki anahtarlarla aynı) */
+export const YETKILER = [
+  { anahtar: "plan", ad: "Vardiya planı", aciklama: "Plan hazırlama ve değiştirme", varsayilan: true },
+  { anahtar: "izin", ad: "İzin yönetimi", aciklama: "Talepleri onaylama/reddetme, izin ve rapor girme", varsayilan: true },
+  { anahtar: "manuel", ad: "Manuel giriş/çıkış", aciklama: "Eksik çıkış ekleme, hareket düzeltme", varsayilan: true },
+  { anahtar: "cihaz", ad: "Cihaz kilidi", aciklama: "Kayıtlı telefonu sıfırlama", varsayilan: true },
+  { anahtar: "pin", ad: "PIN işlemleri", aciklama: "Personele PIN verme ve sıfırlama", varsayilan: false },
+  { anahtar: "personel", ad: "Personel düzenleme", aciklama: "Kendi şubesine personel ekleme, pasife alma", varsayilan: false },
+  { anahtar: "rapor", ad: "Rapor indirme", aciklama: "Excel/PDF dışa aktarma (T.C. kimlik içerir)", varsayilan: false },
+] as const;
+
+export type Yetki = (typeof YETKILER)[number]["anahtar"];
 
 export type Sekme = "bakis" | "puantaj" | "talepler" | "genel" | "personel" | "vardiya";
 
@@ -110,8 +125,19 @@ export function tcGecerliMi(tc: string): boolean {
 }
 
 export function hataYaz(err: unknown): string {
-  if (err && typeof err === "object" && "message" in err) return String((err as { message: unknown }).message);
-  return "Bilinmeyen bir hata oluştu";
+  const metin =
+    err && typeof err === "object" && "message" in err
+      ? String((err as { message: unknown }).message)
+      : typeof err === "string"
+      ? err
+      : "Bilinmeyen bir hata oluştu";
+  // Veritabanının yetki ve kilit hatalarını okunur hale getir
+  const kilit = metin.match(/AY_KILITLI: (\d{4}-\d{2})/);
+  if (kilit) return `${kilit[1]} ayı kapatılmış; bu aya ait kayıt değiştirilemez. Genel yönetici ayı açabilir.`;
+  if (metin.includes("KORUNAN_ALAN")) return "PIN ve cihaz bilgisi yalnızca kendi düğmeleriyle değiştirilebilir.";
+  if (metin.includes("YETKISIZ") || /row-level security|permission denied/i.test(metin))
+    return "Bu işlem için yetkiniz yok. Genel yöneticiden yetki isteyin.";
+  return metin;
 }
 
 /** 11429744574 -> 114******74 (kişisel veriyi ekranda gizler) */

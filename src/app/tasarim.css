@@ -1131,3 +1131,62 @@ textarea {
   padding: 1px 3px;
   font-size: 10px;
 }
+
+/* ---------- Üç seçenekli segment ---------- */
+.segment.segment-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* ---------- Telefonda hızlı işlem kutuları ---------- */
+.hizli-kutu {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 92px;
+  padding: 14px;
+  border: 1px solid var(--cizgi);
+  border-radius: 14px;
+  background: var(--yuzey);
+  color: var(--m1);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.1s, border-color 0.15s;
+}
+.hizli-kutu:active {
+  transform: scale(0.98);
+}
+.hizli-kutu[data-acil="true"] {
+  border-color: var(--hata);
+  background: var(--hata-acik);
+  color: var(--hata);
+}
+
+/* ---------- Vardiya planı: günlük liste ---------- */
+.plan-gun-satir {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 16px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.plan-gun-satir:hover:not(:disabled) {
+  background: var(--yuzey-2);
+}
+.plan-gun-satir:disabled {
+  cursor: default;
+}
+.plan-gun-satir[data-uyari="true"] {
+  background: var(--uyari-acik);
+}
+.plan-hucre:disabled {
+  cursor: default;
+}
+.plan-hucre:disabled:hover {
+  border-color: transparent;
+  background: transparent;
+}

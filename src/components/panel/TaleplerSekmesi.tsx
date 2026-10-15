@@ -16,8 +16,8 @@ function TalepSatiri({
   onSil,
 }: {
   iz: Izin;
-  onDurum: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
-  onSil: (id: string) => void;
+  onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
+  onSil?: (id: string) => void;
 }) {
   const ad = iz.personeller?.ad ?? "?";
   const soyad = iz.personeller?.soyad ?? "";
@@ -49,27 +49,42 @@ function TalepSatiri({
 
       <div className="flex items-center gap-2 sm:justify-end">
         {bekliyor ? (
-          <>
-            <button type="button" className="btn btn-kucuk btn-tehlike-hafif" onClick={() => onDurum(iz.id, "REDDEDILDI")}>
-              <Ikon ad="kapat" boyut={14} />
-              Reddet
-            </button>
-            <button type="button" className="btn btn-kucuk btn-giris" onClick={() => onDurum(iz.id, "ONAYLANDI")}>
-              <Ikon ad="tik" boyut={14} />
-              Onayla
-            </button>
-          </>
+          onDurum ? (
+            <>
+              {/* Telefonda başparmakla rahat basılacak geniş düğmeler */}
+              <button
+                type="button"
+                className="btn btn-tehlike-hafif flex-1 sm:flex-none"
+                onClick={() => onDurum(iz.id, "REDDEDILDI")}
+              >
+                <Ikon ad="kapat" boyut={15} />
+                Reddet
+              </button>
+              <button
+                type="button"
+                className="btn btn-giris flex-1 sm:flex-none"
+                onClick={() => onDurum(iz.id, "ONAYLANDI")}
+              >
+                <Ikon ad="tik" boyut={15} />
+                Onayla
+              </button>
+            </>
+          ) : (
+            <Rozet ton="uyari">Onay bekliyor</Rozet>
+          )
         ) : (
           <>
             {iz.durum === "REDDEDILDI" ? <Rozet ton="hata">Reddedildi</Rozet> : <Rozet ton="giris">Onaylandı</Rozet>}
-            <button
-              type="button"
-              className="btn btn-hayalet btn-kucuk btn-ikon"
-              onClick={() => onSil(iz.id)}
-              aria-label="Kaydı sil"
-            >
-              <Ikon ad="cop" boyut={15} />
-            </button>
+            {onSil && (
+              <button
+                type="button"
+                className="btn btn-hayalet btn-kucuk btn-ikon"
+                onClick={() => onSil(iz.id)}
+                aria-label="Kaydı sil"
+              >
+                <Ikon ad="cop" boyut={15} />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -84,9 +99,10 @@ export default function TaleplerSekmesi({
   onYeni,
 }: {
   izinler: Izin[];
-  onDurum: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
-  onSil: (id: string) => void;
-  onYeni: () => void;
+  /** Verilmezse (izin yetkisi yok) talepler salt okunur gösterilir */
+  onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
+  onSil?: (id: string) => void;
+  onYeni?: () => void;
 }) {
   const bekleyen = izinler.filter((iz) => iz.durum === "BEKLEMEDE");
   const gecmis = izinler.filter((iz) => iz.durum !== "BEKLEMEDE");
@@ -99,10 +115,12 @@ export default function TaleplerSekmesi({
             Onay bekleyenler
             {bekleyen.length > 0 && <Rozet ton="uyari">{bekleyen.length}</Rozet>}
           </h3>
-          <button type="button" className="btn btn-ikincil btn-kucuk" onClick={onYeni}>
-            <Ikon ad="arti" boyut={14} />
-            İzin veya rapor ekle
-          </button>
+          {onYeni && (
+            <button type="button" className="btn btn-ikincil btn-kucuk" onClick={onYeni}>
+              <Ikon ad="arti" boyut={14} />
+              İzin veya rapor ekle
+            </button>
+          )}
         </div>
         <div className="panel overflow-hidden">
           {bekleyen.length === 0 ? (

@@ -17,6 +17,8 @@ export default function PuantajSekmesi({
   onSec,
   onYenile,
   yukleniyor,
+  kilitli = false,
+  onKilit,
 }: {
   liste: PuantajSatiri[];
   seciliAy: string;
@@ -24,6 +26,10 @@ export default function PuantajSekmesi({
   onSec: (id: string) => void;
   onYenile: () => void;
   yukleniyor: boolean;
+  /** Seçili ay kapatılmış mı */
+  kilitli?: boolean;
+  /** Yalnızca genel yöneticide: ayı kapat / aç */
+  onKilit?: () => void;
 }) {
   const [ara, setAra] = useState("");
   const [sadeceSorunlu, setSadeceSorunlu] = useState(false);
@@ -80,7 +86,24 @@ export default function PuantajSekmesi({
         <button type="button" className="btn btn-hayalet btn-kucuk btn-ikon" onClick={onYenile} aria-label="Yenile">
           <Ikon ad="yenile" className={yukleniyor ? "donen" : ""} boyut={16} />
         </button>
+        {kilitli && (
+          <Rozet ton="izin">
+            <Ikon ad="kilit" boyut={13} />
+            Ay kapalı
+          </Rozet>
+        )}
+        {onKilit && (
+          <button type="button" className={`btn btn-kucuk ${kilitli ? "btn-hayalet" : "btn-ikincil"}`} onClick={onKilit}>
+            <Ikon ad={kilitli ? "kilitac" : "kilit"} boyut={14} />
+            {kilitli ? "Ayı aç" : "Ayı kapat"}
+          </button>
+        )}
       </div>
+      {kilitli && (
+        <p className="m2 text-sm">
+          Bu ay kapatıldı: giriş/çıkış, izin ve vardiya planı değiştirilemez. Puantaj kesinleşmiş haliyle görünür.
+        </p>
+      )}
 
       <div className="ozet-seridi">
         <div>
@@ -212,7 +235,7 @@ export default function PuantajSekmesi({
 
       <p className="m3 text-xs leading-relaxed">
         Hesaplama; giriş-çıkış eşleştirmesini (gece vardiyası dahil), 5 dakikalık gecikme ve 15 dakikalık mesai
-        toleransını, 4 saati aşan günlerde vardiya molasının düşülmesini ve Pazar ile resmi tatil ayrımını esas alır.
+        toleransını, 4 saati aşan günlerde vardiya molasının düşülmesini ve vardiya planındaki hafta tatili (plan yoksa Pazar) ile resmi tatil ayrımını esas alır.
         Plan dışı mesai vardiya bitişine göre hesaplanır. Yasal haftalık 45 saat sınırı ve zamlı ücret için bordro
         öncesi mali müşavir onayı alın.
       </p>
