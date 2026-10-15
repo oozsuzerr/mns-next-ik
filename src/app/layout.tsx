@@ -1,10 +1,25 @@
 import type { Metadata, Viewport } from "next";
+import { Bricolage_Grotesque, Manrope } from "next/font/google";
 import "./globals.css";
+import "./tasarim.css";
 import SwKayit from "./SwKayit";
+import { BildirimSaglayici } from "../components/ui";
+
+const baslikFont = Bricolage_Grotesque({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-baslik",
+  display: "swap",
+});
+
+const govdeFont = Manrope({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-govde",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "MNS Next IK",
-  description: "Akıllı PDKS & İK Yönetim Platformu",
+  description: "Akıllı PDKS ve İK yönetim platformu",
   applicationName: "MNS Next IK",
   appleWebApp: {
     capable: true,
@@ -18,7 +33,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f1f4f6" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b1118" },
+  ],
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -26,9 +44,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="tr">
-      <body className="antialiased">
-        {children}
+    <html lang="tr" className={`${baslikFont.variable} ${govdeFont.variable}`}>
+      <body>
+        <BildirimSaglayici>{children}</BildirimSaglayici>
         <SwKayit />
       </body>
     </html>

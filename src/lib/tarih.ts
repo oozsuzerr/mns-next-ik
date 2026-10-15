@@ -79,3 +79,52 @@ export function sureYaz(dk: number): string {
   if (dk >= 60) return `${Math.floor(dk / 60)} sa ${dk % 60} dk`;
   return `${dk} dk`;
 }
+
+// ---------------------------------------------------------------------
+// Arayüz için ek yardımcılar
+// ---------------------------------------------------------------------
+const uzunBicim = new Intl.DateTimeFormat("tr-TR", { timeZone: TZ, day: "numeric", month: "long", weekday: "long" });
+const kisaBicim = new Intl.DateTimeFormat("tr-TR", { timeZone: TZ, day: "numeric", month: "short" });
+const ayBicim = new Intl.DateTimeFormat("tr-TR", { timeZone: TZ, month: "long", year: "numeric" });
+const saatSnBicim = new Intl.DateTimeFormat("tr-TR", {
+  timeZone: TZ,
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+/** "14 Ekim Çarşamba" */
+export function uzunTarih(d: Date | string | number = new Date()): string {
+  return uzunBicim.format(new Date(d));
+}
+
+/** "2026-10-14" metninden "14 Eki" */
+export function kisaTarih(tarih: string): string {
+  return kisaBicim.format(new Date(`${tarih}T12:00:00+03:00`));
+}
+
+/** "2026-10" metninden "Ekim 2026" */
+export function ayAdi(ay: string): string {
+  return ayBicim.format(new Date(`${ay}-01T12:00:00+03:00`));
+}
+
+/** "14:32:07" */
+export function yerelSaatSn(d: Date | string | number): string {
+  return saatSnBicim.format(new Date(d));
+}
+
+/** İki tarih arası gün sayısı (ikisi de dahil) */
+export function gunFarki(bas: string, bit: string): number {
+  const [y1, m1, d1] = bas.split("-").map(Number);
+  const [y2, m2, d2] = bit.split("-").map(Number);
+  return Math.round((Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1)) / 86400000) + 1;
+}
+
+export function selamlama(d: Date = new Date()): string {
+  const saat = Number(yerelSaat(d).slice(0, 2));
+  if (saat < 5) return "İyi geceler";
+  if (saat < 12) return "Günaydın";
+  if (saat < 18) return "İyi günler";
+  return "İyi akşamlar";
+}

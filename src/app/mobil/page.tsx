@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState, Suspense } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
-import { yerelSaat, yerelTarih, yerelTarihSaat } from "../../lib/tarih";
+import { kisaTarih, selamlama, sureYaz, uzunTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
+import { Avatar, Ikon, Marka, Modal, useBildirim } from "../../components/ui";
 
 interface Sube {
   id: string;
@@ -29,6 +30,8 @@ interface Hareket {
 
 const TOKEN_ANAHTAR = "mns_token";
 const CIHAZ_ANAHTAR = "mns_device_id";
+const IPUCU_ANAHTAR = "mns_ipucu_kapali";
+const SAAT18 = 18 * 60 * 60 * 1000;
 
 function mesafeHesapla(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3;
@@ -42,8 +45,8 @@ function mesafeHesapla(lat1: number, lon1: number, lat2: number, lon2: number): 
   return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
-// Cihaz kimliği: ilk açılışta rastgele üretilir, tarayıcıda saklanır.
-// (Mevcut bir kimlik varsa korunur; eski eşleşmeler bozulmaz.)
+// Cihaz kimliği: ilk açılışta rastgele üretilir ve tarayıcıda saklanır.
+// Mevcut bir kimlik varsa korunur, eski eşleşmeler bozulmaz.
 function cihazKimligi(): string {
   let id = localStorage.getItem(CIHAZ_ANAHTAR);
   if (!id) {
@@ -57,39 +60,104 @@ function cihazKimligi(): string {
   return id;
 }
 
-function hataMetni(kod: string, veri?: Record<string, unknown>): string {
+function hataMetni(kod: string | undefined, veri?: Record<string, unknown>): string {
   switch (kod) {
     case "GIRIS_HATALI":
-      return "T.C. Kimlik No veya PIN hatalı.";
+      return "T.C. kimlik numarası veya PIN hatalı.";
     case "HESAP_KILITLI":
       return "Çok fazla hatalı deneme yapıldı. 15 dakika sonra tekrar deneyin.";
     case "CIHAZ_KILITLI":
-      return "Bu hesap başka bir cihaza kilitli! İK yöneticinize başvurun.";
+      return "Bu hesap başka bir telefona bağlı. İK yöneticinizden kilidi açmasını isteyin.";
     case "PIN_TANIMSIZ":
       return "Henüz PIN tanımlanmamış. İK yöneticinize başvurun.";
     case "SINIR_DISI":
-      return `Şube sınırları dışındasınız! ${veri?.sube ?? "Şube"} şubesine ${veri?.mesafe ?? "?"} metre uzaktasınız (limit ${veri?.limit ?? "?"} m).`;
+      return `${veri?.sube ?? "Şube"} şubesine ${veri?.mesafe ?? "?"} metre uzaktasınız (sınır ${veri?.limit ?? "?"} m).`;
     case "GPS_ZAYIF":
-      return "GPS sinyali zayıf. Açık alana çıkıp birkaç saniye bekleyin, tekrar deneyin.";
+      return "GPS sinyali zayıf. Açık alana çıkıp birkaç saniye bekleyin.";
     case "TEKRAR":
       return "Bu işlem az önce zaten kaydedildi.";
     case "SUBE_YOK":
       return "Sistemde tanımlı şube bulunamadı.";
     case "KONUM_GECERSIZ":
-      return "Konum bilgisi alınamadı. GPS iznini kontrol edin.";
+      return "Konum alınamadı. GPS iznini kontrol edin.";
     case "TARIH_GECERSIZ":
-      return "Tarih aralığı geçersiz. Bitiş, başlangıçtan önce olamaz (en fazla 90 gün).";
+      return "Tarih aralığı geçersiz. Bitiş başlangıçtan önce olamaz, en fazla 90 gün seçilebilir.";
     default:
       return "İşlem tamamlanamadı. Lütfen tekrar deneyin.";
   }
 }
 
+// ---------------------------------------------------------------------
+// Mesai kadranı
+// ---------------------------------------------------------------------
+type KadranDurumu = "bekliyor" | "uzakta" | "hazir" | "kaydediliyor" | "tamam";
+
+function Kadran({
+  durum,
+  islem,
+  ilerleme,
+  ana,
+  alt,
+  onBas,
+}: {
+  durum: KadranDurumu;
+  islem: "giris" | "cikis";
+  ilerleme: number;
+  ana: string;
+  alt: string;
+  onBas: () => void;
+}) {
+  const R = 118;
+  const C = 2 * Math.PI * R;
+  const renk =
+    durum === "uzakta" ? "var(--uyari)" : durum === "tamam" || islem === "giris" ? "var(--giris)" : "var(--cikis)";
+  const dolu = Math.max(0, Math.min(1, ilerleme));
+  const hazir = durum === "hazir";
+  const dugmeSinif = hazir ? (islem === "giris" ? "kd-giris kd-nabiz" : "kd-cikis kd-nabiz") : durum === "tamam" ? "kd-tamam" : durum === "kaydediliyor" ? (islem === "giris" ? "kd-giris" : "kd-cikis") : "kd-pasif";
+  const ikon = durum === "tamam" ? "tik" : durum === "uzakta" || durum === "bekliyor" ? "konum" : islem === "giris" ? "gunes" : "ay";
+
+  return (
+    <div className="kadran-kap">
+      <svg viewBox="0 0 260 260" className="kadran-halka" aria-hidden="true">
+        <circle cx="130" cy="130" r={R} fill="none" stroke="var(--cizgi)" strokeWidth="10" />
+        <circle
+          cx="130"
+          cy="130"
+          r={R}
+          fill="none"
+          stroke={renk}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={C}
+          strokeDashoffset={C * (1 - dolu)}
+          transform="rotate(-90 130 130)"
+          style={{ transition: "stroke-dashoffset 0.8s cubic-bezier(0.2,0.8,0.2,1), stroke 0.3s" }}
+        />
+      </svg>
+      <button type="button" className={`kadran-dugme ${dugmeSinif}`} onClick={onBas} disabled={!hazir} aria-label={`${ana}. ${alt}`}>
+        <Ikon ad={ikon} boyut={30} />
+        <span className="baslik-font kd-ana">{ana}</span>
+        <span className="kd-alt">{alt}</span>
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Sayfa
+// ---------------------------------------------------------------------
 function MobilGirisEkrani() {
+  const { bildir } = useBildirim();
+
   const [token, setToken] = useState<string | null>(null);
   const [baslatildi, setBaslatildi] = useState(false);
+  const [simdi, setSimdi] = useState<Date | null>(null);
 
   const [tcGiris, setTcGiris] = useState("");
   const [pinGiris, setPinGiris] = useState("");
+  const [pinGoster, setPinGoster] = useState(false);
+  const [girisHata, setGirisHata] = useState<string | null>(null);
+
   const [personel, setPersonel] = useState<Personel | null>(null);
   const [subeler, setSubeler] = useState<Sube[]>([]);
   const [gecmis, setGecmis] = useState<Hareket[]>([]);
@@ -97,15 +165,15 @@ function MobilGirisEkrani() {
   const [enlem, setEnlem] = useState<number | null>(null);
   const [boylam, setBoylam] = useState<number | null>(null);
   const [dogruluk, setDogruluk] = useState<number | null>(null);
-  const [enYakinSube, setEnYakinSube] = useState<Sube | null>(null);
-  const [mesafe, setMesafe] = useState<number | null>(null);
   const [konumHata, setKonumHata] = useState<string | null>(null);
 
+  const [secilenIslem, setSecilenIslem] = useState<"giris" | "cikis">("giris");
   const [yukleniyor, setYukleniyor] = useState(false);
-  const [islemMesaj, setIslemMesaj] = useState<{ tip: "basarili" | "hata"; metin: string } | null>(null);
-  const [anaEkranIpucu, setAnaEkranIpucu] = useState(false);
+  const [tamam, setTamam] = useState(false);
+  const [mesaj, setMesaj] = useState<string | null>(null);
+  const [ipucuGoster, setIpucuGoster] = useState(false);
 
-  const [izinModalAcik, setIzinModalAcik] = useState(false);
+  const [izinAcik, setIzinAcik] = useState(false);
   const [talepYukleniyor, setTalepYukleniyor] = useState(false);
   const [izinTalep, setIzinTalep] = useState({
     izin_turu: "Raporlu / İstirahat",
@@ -128,9 +196,9 @@ function MobilGirisEkrani() {
       if (error) {
         if (error.message.includes("OTURUM_GECERSIZ")) {
           oturumuTemizle();
-          setIslemMesaj({ tip: "hata", metin: "Oturum süresi doldu. Lütfen tekrar giriş yapın." });
+          setGirisHata("Oturum süresi doldu. Lütfen tekrar giriş yapın.");
         } else {
-          setIslemMesaj({ tip: "hata", metin: "Veriler alınamadı. İnternet bağlantınızı kontrol edin." });
+          setMesaj("Veriler alınamadı. İnternet bağlantınızı kontrol edin.");
         }
         return false;
       }
@@ -142,16 +210,16 @@ function MobilGirisEkrani() {
     [oturumuTemizle]
   );
 
-  // Açılışta kayıtlı oturum varsa geri yükle
+  // Açılış: kayıtlı oturumu geri yükle
   useEffect(() => {
     const t = localStorage.getItem(TOKEN_ANAHTAR);
     const bugun = yerelTarih();
     setIzinTalep((s) => ({ ...s, baslangic_tarihi: bugun, bitis_tarihi: bugun }));
 
-    const standalone =
+    const bagimsiz =
       window.matchMedia("(display-mode: standalone)").matches ||
       (navigator as unknown as { standalone?: boolean }).standalone === true;
-    setAnaEkranIpucu(!standalone);
+    setIpucuGoster(!bagimsiz && localStorage.getItem(IPUCU_ANAHTAR) !== "1");
 
     async function baslat() {
       if (t) {
@@ -163,47 +231,69 @@ function MobilGirisEkrani() {
     baslat();
   }, [ozetYukle]);
 
-  // GPS takibi
+  // Canlı saat
+  useEffect(() => {
+    setSimdi(new Date());
+    const z = setInterval(() => setSimdi(new Date()), 1000);
+    return () => clearInterval(z);
+  }, []);
+
+  // GPS
   useEffect(() => {
     if (!navigator.geolocation) {
       setKonumHata("Tarayıcınız konum servisini desteklemiyor.");
       return;
     }
-    const watchId = navigator.geolocation.watchPosition(
+    const id = navigator.geolocation.watchPosition(
       (pos) => {
         setEnlem(pos.coords.latitude);
         setBoylam(pos.coords.longitude);
         setDogruluk(pos.coords.accuracy);
         setKonumHata(null);
       },
-      () => setKonumHata("Lütfen konum (GPS) iznini açın."),
+      () => setKonumHata("Konum izni kapalı. Tarayıcı ayarlarından açın."),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
-    return () => navigator.geolocation.clearWatch(watchId);
+    return () => navigator.geolocation.clearWatch(id);
   }, []);
 
   // En yakın şube (yalnızca ekranda göstermek için; kesin karar sunucuda verilir)
-  useEffect(() => {
-    if (enlem === null || boylam === null || subeler.length === 0) return;
+  const yakin = useMemo(() => {
+    if (enlem === null || boylam === null || subeler.length === 0) return null;
     let enYakin: Sube | null = null;
-    let minMesafe = Infinity;
-    for (const sube of subeler) {
-      const m = mesafeHesapla(enlem, boylam, Number(sube.enlem), Number(sube.boylam));
-      if (m < minMesafe) {
-        minMesafe = m;
-        enYakin = sube;
+    let min = Infinity;
+    for (const s of subeler) {
+      const m = mesafeHesapla(enlem, boylam, Number(s.enlem), Number(s.boylam));
+      if (m < min) {
+        min = m;
+        enYakin = s;
       }
     }
-    setEnYakinSube(enYakin);
-    setMesafe(minMesafe);
+    return enYakin ? { sube: enYakin, mesafe: min } : null;
   }, [enlem, boylam, subeler]);
 
-  async function girisYap(e: React.FormEvent) {
+  const sinirda = !!yakin && yakin.mesafe <= Number(yakin.sube.limit_metre);
+
+  // Mesai durumu: son hareket "giriş" ise ve 18 saatten eskiyse değilse içeridedir
+  const sonHareket = gecmis[0] ?? null;
+  const girisZamani =
+    sonHareket && sonHareket.islem_turu === "İşe Giriş" && simdi && simdi.getTime() - new Date(sonHareket.created_at).getTime() < SAAT18
+      ? new Date(sonHareket.created_at)
+      : null;
+  const icerde = girisZamani !== null;
+  const gecenDk = girisZamani && simdi ? Math.max(0, Math.floor((simdi.getTime() - girisZamani.getTime()) / 60000)) : 0;
+
+  // Durum değişince doğru işlemi önceden seç
+  useEffect(() => {
+    setSecilenIslem(icerde ? "cikis" : "giris");
+  }, [icerde]);
+
+  async function girisYap(e: FormEvent) {
     e.preventDefault();
     if (tcGiris.length !== 11 || pinGiris.length < 4) return;
 
     setYukleniyor(true);
-    setIslemMesaj(null);
+    setGirisHata(null);
     try {
       const { data, error } = await supabase.rpc("personel_giris", {
         p_tc: tcGiris,
@@ -213,7 +303,7 @@ function MobilGirisEkrani() {
       if (error) throw error;
 
       if (!data?.ok) {
-        setIslemMesaj({ tip: "hata", metin: hataMetni(data?.hata) });
+        setGirisHata(hataMetni(data?.hata));
         setPinGiris("");
         return;
       }
@@ -225,28 +315,24 @@ function MobilGirisEkrani() {
       setTcGiris("");
       await ozetYukle(data.token);
     } catch {
-      setIslemMesaj({ tip: "hata", metin: "Giriş yapılamadı. İnternet bağlantınızı kontrol edin." });
+      setGirisHata("Giriş yapılamadı. İnternet bağlantınızı kontrol edin.");
     } finally {
       setYukleniyor(false);
     }
   }
 
   async function cikisYap() {
-    if (token) {
-      await supabase.rpc("oturum_kapat", { p_token: token });
-    }
+    if (token) await supabase.rpc("oturum_kapat", { p_token: token });
     oturumuTemizle();
-    setIslemMesaj(null);
+    setMesaj(null);
   }
 
-  async function hareketKaydet(islemTuru: "İşe Giriş" | "İşe Çıkış") {
-    if (!token || enlem === null || boylam === null) {
-      alert("Konum bilgisi henüz hazır değil.");
-      return;
-    }
+  async function hareketKaydet() {
+    if (!token || enlem === null || boylam === null) return;
+    const islemTuru = secilenIslem === "giris" ? "İşe Giriş" : "İşe Çıkış";
 
     setYukleniyor(true);
-    setIslemMesaj(null);
+    setMesaj(null);
     try {
       const { data, error } = await supabase.rpc("hareket_kaydet", {
         p_token: token,
@@ -259,30 +345,30 @@ function MobilGirisEkrani() {
       if (error) {
         if (error.message.includes("OTURUM_GECERSIZ")) {
           oturumuTemizle();
-          setIslemMesaj({ tip: "hata", metin: "Oturum süresi doldu. Lütfen tekrar giriş yapın." });
+          setGirisHata("Oturum süresi doldu. Lütfen tekrar giriş yapın.");
           return;
         }
         throw error;
       }
 
       if (!data?.ok) {
-        setIslemMesaj({ tip: "hata", metin: hataMetni(data?.hata, data) });
+        setMesaj(hataMetni(data?.hata, data));
         return;
       }
 
-      setIslemMesaj({ tip: "basarili", metin: `${islemTuru} başarıyla kaydedildi! (${data.sube})` });
+      setTamam(true);
+      setTimeout(() => setTamam(false), 2600);
       await ozetYukle(token);
     } catch {
-      setIslemMesaj({ tip: "hata", metin: "Kayıt yapılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin." });
+      setMesaj("Kayıt yapılamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.");
     } finally {
       setYukleniyor(false);
     }
   }
 
-  async function talepGonder(e: React.FormEvent) {
+  async function talepGonder(e: FormEvent) {
     e.preventDefault();
     if (!token) return;
-
     setTalepYukleniyor(true);
     try {
       const { data, error } = await supabase.rpc("izin_talep_olustur", {
@@ -294,337 +380,370 @@ function MobilGirisEkrani() {
       });
       if (error) throw error;
       if (!data?.ok) {
-        alert(hataMetni(data?.hata));
+        bildir(hataMetni(data?.hata), "hata");
         return;
       }
-
-      alert("Talebiniz İK birimine iletildi! Onaylandığında puantajınıza yansıyacaktır.");
-      setIzinModalAcik(false);
+      bildir("Talebiniz İK birimine iletildi.", "basari");
+      setIzinAcik(false);
       const bugun = yerelTarih();
       setIzinTalep({ izin_turu: "Raporlu / İstirahat", baslangic_tarihi: bugun, bitis_tarihi: bugun, aciklama: "" });
     } catch {
-      alert("Talep gönderilemedi. Lütfen tekrar deneyin.");
+      bildir("Talep gönderilemedi. Lütfen tekrar deneyin.", "hata");
     } finally {
       setTalepYukleniyor(false);
     }
   }
 
-  const sinirdaMi = !!enYakinSube && mesafe !== null && mesafe <= Number(enYakinSube.limit_metre);
-  const girisli = !!personel && !!token;
+  // -------------------------------------------------------------------
+  // Görünüm
+  // -------------------------------------------------------------------
+  if (!baslatildi) return <div className="min-h-screen" />;
 
-  if (!baslatildi) {
-    return <div className="min-h-screen bg-slate-900" />;
-  }
+  const girisli = !!token && !!personel;
 
-  return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col justify-between p-4 max-w-md mx-auto">
-      <div className="space-y-4">
-        {/* Üst Logo */}
-        <div className="flex items-center justify-between pt-2">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xl shadow-md border border-blue-500">
-              M
-            </div>
-            <div>
-              <h1 className="font-extrabold text-base tracking-wide text-white">MNS NEXT IK</h1>
-              <p className="text-[11px] text-slate-400 font-medium">Mobil Çalışan Portalı</p>
-            </div>
+  // ---------- Giriş ekranı ----------
+  if (!girisli) {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-8 pt-14">
+        <Marka boyut={48} />
+        <h1 className="baslik-font m1 mt-8 text-4xl leading-tight">Mesaiye başlamadan önce giriş yapın</h1>
+        <p className="m2 mt-3 text-base">T.C. kimlik numaranız ve İK birimi tarafından verilen PIN ile devam edin.</p>
+
+        <form onSubmit={girisYap} className="mt-8 space-y-4">
+          <div>
+            <label className="etiket" htmlFor="tc">
+              T.C. kimlik no
+            </label>
+            <input
+              id="tc"
+              className="girdi sayi"
+              style={{ height: 52, fontSize: 18 }}
+              inputMode="numeric"
+              maxLength={11}
+              autoComplete="username"
+              value={tcGiris}
+              onChange={(e) => setTcGiris(e.target.value.replace(/\D/g, ""))}
+            />
           </div>
-          <a
-            href="/"
-            className="text-xs font-semibold px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition border border-slate-700"
-          >
-            Yönetici ➔
-          </a>
-        </div>
-
-        {/* Giriş / Profil */}
-        {!girisli ? (
-          <form
-            onSubmit={girisYap}
-            className="bg-slate-800/80 border border-slate-700 p-5 rounded-2xl space-y-4 backdrop-blur-sm shadow-xl"
-          >
-            <div>
-              <h2 className="text-sm font-bold text-slate-200">Personel Girişi</h2>
-              <p className="text-xs text-slate-400 mt-0.5">T.C. Kimlik numaranızı ve İK&apos;nın verdiği PIN&apos;i girin.</p>
-            </div>
-
-            <div className="space-y-3">
+          <div>
+            <label className="etiket" htmlFor="pin">
+              PIN
+            </label>
+            <div className="relative">
               <input
-                type="text"
-                inputMode="numeric"
-                maxLength={11}
-                autoComplete="username"
-                placeholder="T.C. Kimlik No"
-                value={tcGiris}
-                onChange={(e) => setTcGiris(e.target.value.replace(/\D/g, ""))}
-                className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono text-center tracking-widest text-lg focus:outline-none focus:border-blue-500"
-              />
-              <input
-                type="password"
+                id="pin"
+                className="girdi sayi"
+                style={{ height: 52, fontSize: 18, paddingRight: 52 }}
+                type={pinGoster ? "text" : "password"}
                 inputMode="numeric"
                 maxLength={8}
                 autoComplete="current-password"
-                placeholder="PIN"
                 value={pinGiris}
                 onChange={(e) => setPinGiris(e.target.value.replace(/\D/g, ""))}
-                className="w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-700 text-white font-mono text-center tracking-widest text-lg focus:outline-none focus:border-blue-500"
               />
               <button
-                type="submit"
-                disabled={yukleniyor || tcGiris.length !== 11 || pinGiris.length < 4}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm transition shadow-lg"
+                type="button"
+                onClick={() => setPinGoster(!pinGoster)}
+                className="btn btn-hayalet btn-ikon absolute right-1.5 top-1/2 -translate-y-1/2"
+                aria-label={pinGoster ? "PIN'i gizle" : "PIN'i göster"}
               >
-                {yukleniyor ? "Doğrulanıyor..." : "Giriş Yap"}
+                <Ikon ad={pinGoster ? "gozkapali" : "goz"} />
               </button>
             </div>
-          </form>
-        ) : (
-          <div className="bg-slate-800/80 border border-slate-700 p-4 rounded-2xl flex items-center justify-between backdrop-blur-sm">
-            <div>
-              <p className="text-xs text-slate-400 font-medium">
-                {personel?.sicil_no} • {personel?.departman || "Genel"}
-              </p>
-              <h2 className="text-base font-extrabold text-white">
-                {personel?.ad} {personel?.soyad}
-              </h2>
-            </div>
-            <button
-              onClick={cikisYap}
-              className="text-xs text-slate-400 hover:text-red-400 font-medium px-2 py-1 rounded bg-slate-900 border border-slate-700"
-            >
-              Çıkış
-            </button>
-          </div>
-        )}
-
-        {islemMesaj && (
-          <div
-            className={`p-3.5 rounded-xl text-xs font-bold border ${
-              islemMesaj.tip === "basarili"
-                ? "bg-emerald-950/60 text-emerald-300 border-emerald-800"
-                : "bg-red-950/60 text-red-300 border-red-800"
-            }`}
-          >
-            {islemMesaj.metin}
-          </div>
-        )}
-
-        {/* GPS Durumu */}
-        <div className="bg-slate-800/50 border border-slate-700/80 p-4 rounded-2xl space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5">
-              <span
-                className={`w-2 h-2 rounded-full ${
-                  konumHata ? "bg-red-500" : sinirdaMi ? "bg-emerald-500 animate-pulse" : "bg-amber-500"
-                }`}
-              ></span>
-              GPS & Şube Durumu
-            </span>
-            <span className="text-[11px] font-mono text-slate-500">
-              {enlem !== null && boylam !== null ? `${enlem.toFixed(4)}, ${boylam.toFixed(4)}` : "Taranıyor..."}
-            </span>
           </div>
 
-          {konumHata ? (
-            <p className="text-xs text-red-400 font-medium">{konumHata}</p>
-          ) : !girisli ? (
-            <p className="text-xs text-slate-400">Şube durumunu görmek için giriş yapın.</p>
-          ) : enYakinSube ? (
-            <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-slate-200">{enYakinSube.ad}</p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Mesafe: <strong className="text-white">{mesafe} metre</strong> (Limit: ±{enYakinSube.limit_metre}m)
-                  {dogruluk !== null && <span className="text-slate-500"> • GPS ±{Math.round(dogruluk)}m</span>}
-                </p>
-              </div>
-              <div>
-                {sinirdaMi ? (
-                  <span className="px-2 py-1 rounded-md text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    Şubedesiniz ✓
-                  </span>
-                ) : (
-                  <span className="px-2 py-1 rounded-md text-[11px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                    Sınır Dışı
-                  </span>
-                )}
-              </div>
-            </div>
-          ) : (
-            <p className="text-xs text-slate-400">
-              {subeler.length === 0 ? "Sistemde tanımlı şube bulunamadı." : "En yakın şube taranıyor..."}
+          {girisHata && (
+            <p className="flex items-start gap-2 text-sm font-semibold" style={{ color: "var(--hata)" }} role="alert">
+              <Ikon ad="uyari" boyut={17} />
+              <span>{girisHata}</span>
             </p>
           )}
-        </div>
 
-        {/* Aksiyonlar */}
-        {girisli && (
-          <div className="space-y-2.5 pt-1">
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => hareketKaydet("İşe Giriş")}
-                disabled={yukleniyor || !sinirdaMi}
-                className="py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 disabled:opacity-40 font-extrabold text-sm text-white shadow-lg transition flex flex-col items-center justify-center gap-1"
-              >
-                <span className="text-lg">☀️</span>
-                İşe Giriş Yap
-              </button>
+          <button
+            type="submit"
+            className="btn btn-ana btn-buyuk w-full"
+            disabled={yukleniyor || tcGiris.length !== 11 || pinGiris.length < 4}
+          >
+            {yukleniyor ? "Doğrulanıyor..." : "Giriş yap"}
+          </button>
+        </form>
 
-              <button
-                onClick={() => hareketKaydet("İşe Çıkış")}
-                disabled={yukleniyor || !sinirdaMi}
-                className="py-4 rounded-2xl bg-rose-600 hover:bg-rose-500 active:scale-95 disabled:opacity-40 font-extrabold text-sm text-white shadow-lg transition flex flex-col items-center justify-center gap-1"
-              >
-                <span className="text-lg">🌙</span>
-                İşe Çıkış Yap
-              </button>
-            </div>
-
-            <button
-              onClick={() => setIzinModalAcik(true)}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30 rounded-2xl font-bold text-xs transition flex items-center justify-center gap-2"
-            >
-              <span>🏥</span> İzin / Sağlık Raporu Talep Et
-            </button>
-          </div>
-        )}
-
-        {/* Son Hareketler */}
-        {girisli && (
-          <div className="bg-slate-800/40 border border-slate-700/60 p-4 rounded-2xl space-y-3">
-            <h3 className="text-xs font-bold text-slate-300">Son İşlemleriniz</h3>
-            {gecmis.length > 0 ? (
-              <div className="space-y-2">
-                {gecmis.map((h) => (
-                  <div
-                    key={h.id}
-                    className="flex items-center justify-between p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-xs"
-                  >
-                    <div>
-                      <span
-                        className={`font-bold mr-2 ${
-                          h.islem_turu === "İşe Giriş" ? "text-emerald-400" : "text-rose-400"
-                        }`}
-                      >
-                        {h.islem_turu}
-                      </span>
-                      <span className="text-slate-400">{h.sube_ad || "Şube"}</span>
-                    </div>
-                    <span className="text-slate-400 font-mono text-[11px]" title={yerelTarihSaat(h.created_at)}>
-                      {yerelTarih(h.created_at) === yerelTarih() ? "" : yerelTarih(h.created_at).slice(5) + " "}
-                      {yerelSaat(h.created_at)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500 py-2 text-center">Henüz bir hareket kaydınız yok.</p>
-            )}
-          </div>
-        )}
-
-        {/* Ana ekrana ekle ipucu */}
-        {anaEkranIpucu && (
-          <div className="bg-blue-950/40 border border-blue-900/60 p-3 rounded-2xl text-[11px] text-blue-200 leading-relaxed">
-            📲 Uygulama gibi kullanmak için: <strong>iPhone</strong>&apos;da Safari&apos;de Paylaş ▸ &quot;Ana Ekrana Ekle&quot;,{" "}
-            <strong>Android</strong>&apos;de Chrome menüsü ▸ &quot;Ana ekrana ekle / Uygulamayı yükle&quot;.
-          </div>
-        )}
+        <p className="m3 mt-auto pt-10 text-center text-sm">
+          Yönetici misiniz?{" "}
+          <a href="/" className="m2 font-semibold underline">
+            Yönetim paneline gidin
+          </a>
+        </p>
       </div>
+    );
+  }
 
-      {/* İzin / Rapor Talep Modalı */}
-      {izinModalAcik && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5 max-w-sm w-full space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-700 pb-3">
-              <h3 className="font-extrabold text-sm text-white">İzin / Rapor Talebi</h3>
-              <button onClick={() => setIzinModalAcik(false)} className="text-slate-400 text-lg">
-                ✕
-              </button>
-            </div>
+  // ---------- Ana ekran ----------
+  const saatMetni = simdi ? yerelSaatSn(simdi) : "--:--:--";
+  const [ss, dd, sn] = saatMetni.split(":");
 
-            <form onSubmit={talepGonder} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Talep Türü</label>
-                <select
-                  value={izinTalep.izin_turu}
-                  onChange={(e) => setIzinTalep({ ...izinTalep, izin_turu: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                >
-                  <option value="Raporlu / İstirahat">Sağlık Raporu / İstirahat</option>
-                  <option value="Yıllık İzin">Yıllık Ücretli İzin</option>
-                  <option value="Mazeret İzni">Mazeret İzni</option>
-                  <option value="Ücretsiz İzin">Ücretsiz İzin</option>
-                </select>
-              </div>
+  const bugun = yerelTarih();
+  const bugunkuler = gecmis.filter((h) => yerelTarih(h.created_at) === bugun).slice().reverse();
 
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-slate-300 font-bold mb-1">Başlangıç</label>
-                  <input
-                    type="date"
-                    required
-                    value={izinTalep.baslangic_tarihi}
-                    onChange={(e) => setIzinTalep({ ...izinTalep, baslangic_tarihi: e.target.value })}
-                    className="w-full px-2 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-300 font-bold mb-1">Bitiş</label>
-                  <input
-                    type="date"
-                    required
-                    value={izinTalep.bitis_tarihi}
-                    onChange={(e) => setIzinTalep({ ...izinTalep, bitis_tarihi: e.target.value })}
-                    className="w-full px-2 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white text-xs"
-                  />
-                </div>
-              </div>
+  let kadranDurumu: KadranDurumu = "hazir";
+  let ana = secilenIslem === "giris" ? "Giriş yap" : "Çıkış yap";
+  let alt = yakin ? yakin.sube.ad : "";
+  let ilerleme = 1;
 
-              <div>
-                <label className="block text-slate-300 font-bold mb-1">Mazeret / Belge Notu</label>
-                <input
-                  type="text"
-                  maxLength={300}
-                  placeholder="Örn: 2 gün rapor aldım, rapor no: 4321"
-                  value={izinTalep.aciklama}
-                  onChange={(e) => setIzinTalep({ ...izinTalep, aciklama: e.target.value })}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white"
-                />
-              </div>
+  if (tamam) {
+    kadranDurumu = "tamam";
+    ana = "Kaydedildi";
+    alt = yakin?.sube.ad ?? "";
+  } else if (yukleniyor) {
+    kadranDurumu = "kaydediliyor";
+    ana = "Kaydediliyor";
+    alt = "";
+  } else if (konumHata || enlem === null) {
+    kadranDurumu = "bekliyor";
+    ana = "Konum bekleniyor";
+    alt = konumHata ?? "GPS taranıyor";
+    ilerleme = 0;
+  } else if (!yakin) {
+    kadranDurumu = "bekliyor";
+    ana = "Şube bulunamadı";
+    alt = "İK ile iletişime geçin";
+    ilerleme = 0;
+  } else if (!sinirda) {
+    kadranDurumu = "uzakta";
+    ana = `${yakin.mesafe} m`;
+    alt = `${yakin.sube.ad} şubesine uzaktasınız`;
+    ilerleme = Number(yakin.sube.limit_metre) / yakin.mesafe;
+  } else if (icerde && secilenIslem === "cikis") {
+    ilerleme = Math.min(1, gecenDk / 540);
+  }
 
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIzinModalAcik(false)}
-                  className="flex-1 py-2 rounded-xl bg-slate-700 text-slate-300 font-bold"
-                >
-                  Vazgeç
-                </button>
-                <button
-                  type="submit"
-                  disabled={talepYukleniyor}
-                  className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold"
-                >
-                  {talepYukleniyor ? "Gönderiliyor..." : "Talebi İlet"}
-                </button>
-              </div>
-            </form>
+  const durumSatiri = icerde
+    ? `Mesaidesiniz: ${sureYaz(gecenDk)} (${girisZamani ? yerelSaat(girisZamani) : ""} girişinden beri)`
+    : bugunkuler.some((h) => h.islem_turu === "İşe Çıkış")
+    ? "Bugünkü çıkışınız kaydedildi."
+    : "Henüz giriş yapmadınız.";
+
+  return (
+    <div className="mx-auto flex min-h-screen max-w-md flex-col gap-7 px-5 pb-10 pt-5">
+      {/* Üst bilgi */}
+      <header className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Avatar ad={personel.ad} soyad={personel.soyad} boyut={42} />
+          <div>
+            <p className="m2 text-sm">{selamlama()}</p>
+            <p className="baslik-font m1 text-lg leading-tight">
+              {personel.ad} {personel.soyad}
+            </p>
           </div>
+        </div>
+        <button type="button" className="btn btn-hayalet btn-ikon" onClick={cikisYap} aria-label="Çıkış yap">
+          <Ikon ad="cikis" />
+        </button>
+      </header>
+
+      {/* Saat */}
+      <section className="text-center">
+        <p className="baslik-font sayi saat-buyuk m1">
+          {ss}:{dd}
+          <span className="m3 saat-sn">:{sn}</span>
+        </p>
+        <p className="m2 mt-1 text-sm">{uzunTarih()}</p>
+      </section>
+
+      {/* Kadran */}
+      <section>
+        <Kadran durum={kadranDurumu} islem={secilenIslem} ilerleme={ilerleme} ana={ana} alt={alt} onBas={hareketKaydet} />
+        <p className="m2 mt-4 min-h-[1.5rem] text-center text-sm font-medium" aria-live="polite">
+          {durumSatiri}
+        </p>
+        {mesaj && (
+          <p
+            className="mt-2 flex items-start justify-center gap-2 text-center text-sm font-semibold"
+            style={{ color: "var(--hata)" }}
+            role="alert"
+          >
+            <Ikon ad="uyari" boyut={17} />
+            <span>{mesaj}</span>
+          </p>
+        )}
+        {yakin && sinirda && dogruluk !== null && (
+          <p className="m3 mt-1 text-center text-xs">
+            Şubeye {yakin.mesafe} m, konum doğruluğu ±{Math.round(dogruluk)} m
+          </p>
+        )}
+      </section>
+
+      {/* İşlem seçici */}
+      <section>
+        <div className="segment" role="tablist" aria-label="İşlem türü">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={secilenIslem === "giris"}
+            data-aktif={secilenIslem === "giris"}
+            onClick={() => setSecilenIslem("giris")}
+          >
+            Giriş
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={secilenIslem === "cikis"}
+            data-aktif={secilenIslem === "cikis"}
+            onClick={() => setSecilenIslem("cikis")}
+          >
+            Çıkış
+          </button>
+        </div>
+        <p className="ipucu text-center">Sistem sizin için doğru işlemi seçer, gerekirse buradan değiştirin.</p>
+      </section>
+
+      {/* Bugün */}
+      <section className="panel p-5">
+        <h2 className="baslik-font m1 mb-3 text-lg">Bugün</h2>
+        {bugunkuler.length === 0 ? (
+          <p className="m3 text-sm">Bugün henüz işlem yapılmadı.</p>
+        ) : (
+          <div className="zaman">
+            {bugunkuler.map((h) => (
+              <div key={h.id} className="zaman-oge" data-islem={h.islem_turu === "İşe Giriş" ? "giris" : "cikis"}>
+                <p className="m1 text-sm font-semibold">
+                  <span className="sayi">{yerelSaat(h.created_at)}</span>
+                  <span className="m2 ml-2 font-medium">{h.islem_turu === "İşe Giriş" ? "Giriş" : "Çıkış"}</span>
+                </p>
+                <p className="m3 text-xs">{h.sube_ad || "Şube"}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* İzin talebi */}
+      <button
+        type="button"
+        onClick={() => setIzinAcik(true)}
+        className="panel flex w-full items-center gap-3 p-4 text-left"
+      >
+        <span className="bos-ikon flex h-10 w-10 items-center justify-center rounded-full">
+          <Ikon ad="rapor" />
+        </span>
+        <span className="flex-1">
+          <span className="m1 block font-semibold">İzin veya rapor talebi</span>
+          <span className="m3 block text-xs">İK onayına gönderilir, onaylanınca puantaja işlenir.</span>
+        </span>
+        <Ikon ad="sag" className="m3" />
+      </button>
+
+      {/* Önceki işlemler */}
+      {gecmis.length > 0 && (
+        <section>
+          <h2 className="baslik-font m1 mb-2 px-1 text-lg">Son işlemler</h2>
+          <ul className="panel liste overflow-hidden">
+            {gecmis.map((h) => (
+              <li key={h.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="nokta" style={{ background: h.islem_turu === "İşe Giriş" ? "var(--giris)" : "var(--cikis)" }} />
+                <span className="m1 flex-1 text-sm font-semibold">
+                  {h.islem_turu === "İşe Giriş" ? "Giriş" : "Çıkış"}
+                  <span className="m3 ml-2 text-xs font-normal">{h.sube_ad || "Şube"}</span>
+                </span>
+                <span className="m2 sayi text-sm">
+                  {yerelTarih(h.created_at) === bugun ? "Bugün" : kisaTarih(yerelTarih(h.created_at))}, {yerelSaat(h.created_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Ana ekrana ekle ipucu */}
+      {ipucuGoster && (
+        <div className="panel-ic flex items-start gap-3 p-4 text-sm">
+          <Ikon ad="telefon" className="m2" />
+          <p className="m2 flex-1">
+            Uygulama gibi kullanmak için: <strong>iPhone</strong>&apos;da Safari&apos;de Paylaş, ardından &quot;Ana Ekrana
+            Ekle&quot;. <strong>Android</strong>&apos;de Chrome menüsünden &quot;Uygulamayı yükle&quot;.
+          </p>
+          <button
+            type="button"
+            className="btn btn-hayalet btn-ikon btn-kucuk"
+            aria-label="İpucunu kapat"
+            onClick={() => {
+              localStorage.setItem(IPUCU_ANAHTAR, "1");
+              setIpucuGoster(false);
+            }}
+          >
+            <Ikon ad="kapat" boyut={15} />
+          </button>
         </div>
       )}
 
-      <footer className="pt-4 pb-1 text-center">
-        <p className="text-[10px] text-slate-500">MNS Next IK Akıllı PDKS Platformu • GPS Korumalı</p>
-      </footer>
+      {/* İzin talebi penceresi */}
+      {izinAcik && (
+        <Modal onKapat={() => setIzinAcik(false)} baslik="İzin veya rapor talebi">
+          <form onSubmit={talepGonder} className="space-y-4">
+            <div>
+              <label className="etiket">Talep türü</label>
+              <select
+                className="girdi"
+                value={izinTalep.izin_turu}
+                onChange={(e) => setIzinTalep({ ...izinTalep, izin_turu: e.target.value })}
+              >
+                <option value="Raporlu / İstirahat">Sağlık raporu / istirahat</option>
+                <option value="Yıllık İzin">Yıllık ücretli izin</option>
+                <option value="Mazeret İzni">Mazeret izni</option>
+                <option value="Ücretsiz İzin">Ücretsiz izin</option>
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="etiket">Başlangıç</label>
+                <input
+                  className="girdi sayi"
+                  type="date"
+                  required
+                  value={izinTalep.baslangic_tarihi}
+                  onChange={(e) => setIzinTalep({ ...izinTalep, baslangic_tarihi: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="etiket">Bitiş</label>
+                <input
+                  className="girdi sayi"
+                  type="date"
+                  required
+                  value={izinTalep.bitis_tarihi}
+                  onChange={(e) => setIzinTalep({ ...izinTalep, bitis_tarihi: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="etiket">Not veya belge numarası</label>
+              <input
+                className="girdi"
+                maxLength={300}
+                placeholder="Örn: 2 gün rapor aldım, rapor no 4321"
+                value={izinTalep.aciklama}
+                onChange={(e) => setIzinTalep({ ...izinTalep, aciklama: e.target.value })}
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="button" className="btn btn-ikincil flex-1" onClick={() => setIzinAcik(false)}>
+                Vazgeç
+              </button>
+              <button type="submit" className="btn btn-ana flex-1" disabled={talepYukleniyor}>
+                {talepYukleniyor ? "Gönderiliyor..." : "Talebi gönder"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
     </div>
   );
 }
 
 export default function MobilPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-900" />}>
+    <Suspense fallback={<div className="min-h-screen" />}>
       <MobilGirisEkrani />
     </Suspense>
   );
