@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { geciciIstemci, supabase } from "../../lib/supabase";
+import { supabase } from "../../lib/supabase";
 import { hataYaz, type Sube } from "../../lib/tipler";
 import { kisaTarih, yerelTarih } from "../../lib/tarih";
 import { Bos, Ikon, Iskelet, Modal, Rozet, useBildirim } from "../ui";
@@ -26,6 +26,27 @@ function kullaniciHatasi(err: unknown): string {
   if (/yonetici_(listesi|kaydet|kaldir)/.test(metin) && /(could not find|does not exist)/i.test(metin))
     return "Rol tabloları henüz oluşturulmamış. supabase/2026-10-15_sube_muduru_rolleri.sql dosyasını Supabase SQL Editor'de çalıştırın.";
   return metin;
+}
+
+/** /api/panel-kullanici hata kodlarını okunur metne çevirir */
+function sunucuHatasi(kod?: string, detay?: string): string {
+  switch (kod) {
+    case "SUNUCU_ANAHTARI_YOK":
+      return "Sunucuda SUPABASE_SERVICE_ROLE_KEY tanımlı değil. Vercel'de ekleyip (Production ve Preview) yeniden deploy edin.";
+    case "OTURUM_YOK":
+    case "YETKISIZ":
+      return "Hesap açmak için genel yönetici olarak giriş yapmış olmalısınız.";
+    case "EPOSTA_GECERSIZ":
+      return "E-posta adresi geçersiz.";
+    case "SIFRE_GECERSIZ":
+      return "Geçici şifre 8 ile 72 karakter arasında olmalı.";
+    case "SUBE_SECILMELI":
+      return "Şube müdürü için en az bir şube seçin.";
+    case "HESAP_ACILAMADI":
+      return `Hesap açılamadı: ${detay ?? "bilinmeyen hata"}`;
+    default:
+      return kullaniciHatasi(kod ?? "İşlem tamamlanamadı.");
+  }
 }
 
 export default function PanelKullanicilari({ subeler }: { subeler: Sube[] }) {
@@ -175,33 +196,30 @@ function KullaniciFormu({
 
     setYukleniyor(true);
     try {
-      // Yeni hesap: kendi oturumumuzu kapatmayan ayrı bir istemciyle açılır
+      let mesaj = mevcut ? "Kullanıcı güncellendi." : "Kullanıcı eklendi.";
       if (!mevcut && sifre) {
-        const { error } = await geciciIstemci().auth.signUp({ email: temizEposta, password: sifre });
-        if (error && !/already registered|already been registered|already exists/i.test(error.message)) {
-          if (/signups? not allowed|disabled/i.test(error.message)) {
-            throw new Error(
-              "Supabase'de yeni kayıt kapalı. Hesabı Supabase > Authentication > Users > Add user ile oluşturun, sonra burada şifre girmeden kaydedin."
-            );
-          }
-          throw error;
-        }
+        // Yeni hesap sunucuda açılır (Supabase'de herkese açık kayıt kapalı); rol de orada kaydedilir
+        const { data } = await supabase.auth.getSession();
+        const cevap = await fetch("/api/panel-kullanici", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+          body: JSON.stringify({ eposta: temizEposta, sifre, ad, rol, subeler: rol === "SUBE" ? secili : [] }),
+        });
+        const sonuc = (await cevap.json().catch(() => ({}))) as { hata?: string; detay?: string; yeniHesap?: boolean };
+        if (!cevap.ok) throw new Error(sunucuHatasi(sonuc.hata, sonuc.detay));
+        mesaj = sonuc.yeniHesap
+          ? "Hesap açıldı. Kişi e-postası ve geçici şifresiyle hemen giriş yapabilir."
+          : "Bu e-postayla zaten hesap vardı; panel yetkisi verildi, şifresi değiştirilmedi.";
+      } else {
+        const { error } = await supabase.rpc("yonetici_kaydet", {
+          p_eposta: temizEposta,
+          p_ad: ad,
+          p_rol: rol,
+          p_subeler: rol === "SUBE" ? secili : [],
+        });
+        if (error) throw error;
       }
-      const { error } = await supabase.rpc("yonetici_kaydet", {
-        p_eposta: temizEposta,
-        p_ad: ad,
-        p_rol: rol,
-        p_subeler: rol === "SUBE" ? secili : [],
-      });
-      if (error) throw error;
-      bildir(
-        mevcut
-          ? "Kullanıcı güncellendi."
-          : sifre
-          ? "Kullanıcı eklendi. E-posta doğrulaması açıksa önce gelen e-postadaki bağlantıya tıklaması gerekir."
-          : "Kullanıcı eklendi.",
-        "basari"
-      );
+      bildir(mesaj, "basari");
       onKayit();
       onKapat();
     } catch (err) {
@@ -242,7 +260,7 @@ function KullaniciFormu({
               autoComplete="new-password"
             />
             <p className="ipucu">
-              Yeni hesap için doldurun ve kişiye iletin. Hesap Supabase&apos;de zaten varsa boş bırakın.
+              Yeni hesap açılır ve doğrulanmış olur; şifreyi kişiye iletin. Hesap zaten varsa boş bırakın.
             </p>
           </div>
         )}
