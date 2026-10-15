@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { kisaTarih, selamlama, sureYaz, uzunTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
@@ -214,6 +215,8 @@ function MobilGirisEkrani() {
   useEffect(() => {
     const t = localStorage.getItem(TOKEN_ANAHTAR);
     const bugun = yerelTarih();
+    // Tarayıcıya özel değer (localStorage/saat/konum) sayfa hidrasyonundan sonra okunur; render sırasında okunamaz
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIzinTalep((s) => ({ ...s, baslangic_tarihi: bugun, bitis_tarihi: bugun }));
 
     const bagimsiz =
@@ -233,6 +236,8 @@ function MobilGirisEkrani() {
 
   // Canlı saat
   useEffect(() => {
+    // Tarayıcıya özel değer (localStorage/saat/konum) sayfa hidrasyonundan sonra okunur; render sırasında okunamaz
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSimdi(new Date());
     const z = setInterval(() => setSimdi(new Date()), 1000);
     return () => clearInterval(z);
@@ -241,6 +246,8 @@ function MobilGirisEkrani() {
   // GPS
   useEffect(() => {
     if (!navigator.geolocation) {
+      // Tarayıcıya özel değer (localStorage/saat/konum) sayfa hidrasyonundan sonra okunur; render sırasında okunamaz
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setKonumHata("Tarayıcınız konum servisini desteklemiyor.");
       return;
     }
@@ -283,10 +290,12 @@ function MobilGirisEkrani() {
   const icerde = girisZamani !== null;
   const gecenDk = girisZamani && simdi ? Math.max(0, Math.floor((simdi.getTime() - girisZamani.getTime()) / 60000)) : 0;
 
-  // Durum değişince doğru işlemi önceden seç
-  useEffect(() => {
+  // Durum değişince doğru işlemi önceden seç (önceki değer karşılaştırılarak, render sırasında)
+  const [oncekiIcerde, setOncekiIcerde] = useState(icerde);
+  if (icerde !== oncekiIcerde) {
+    setOncekiIcerde(icerde);
     setSecilenIslem(icerde ? "cikis" : "giris");
-  }, [icerde]);
+  }
 
   async function girisYap(e: FormEvent) {
     e.preventDefault();
@@ -470,9 +479,9 @@ function MobilGirisEkrani() {
 
         <p className="m3 mt-auto pt-10 text-center text-sm">
           Yönetici misiniz?{" "}
-          <a href="/" className="m2 font-semibold underline">
+          <Link href="/" className="m2 font-semibold underline">
             Yönetim paneline gidin
-          </a>
+          </Link>
         </p>
       </div>
     );

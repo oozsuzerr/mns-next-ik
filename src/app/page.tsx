@@ -18,7 +18,7 @@ import {
   type Sube,
   type Vardiya,
 } from "../lib/tipler";
-import { ayAdi, ayAraligi, haftaGunu, planAni, sureYaz, yerelSaat, yerelTarih, yerelTarihSaat } from "../lib/tarih";
+import { ayAdi, ayAraligi, haftaGunu, planAni, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
 import { AcilirMenu, Bos, Ikon, Marka, useBildirim, type IkonAdi } from "../components/ui";
 import BugunSerit, { type BugunOzet } from "../components/panel/BugunSerit";
 import PuantajSekmesi from "../components/panel/PuantajSekmesi";
@@ -51,7 +51,8 @@ const SEKMELER: { id: Sekme; etiket: string; kisa: string; ikon: IkonAdi }[] = [
 export default function Home() {
   const [oturum, setOturum] = useState<Session | null>(null);
   const [hazir, setHazir] = useState(false);
-  const [yonetici, setYonetici] = useState<boolean | null>(null);
+  // Yetki sonucu, sorgulandığı kullanıcıyla birlikte tutulur; kullanıcı değişince otomatik geçersiz olur
+  const [yetki, setYetki] = useState<{ id: string; yonetici: boolean } | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -65,14 +66,12 @@ export default function Home() {
   }, []);
 
   const kullaniciId = oturum?.user.id;
+  const yonetici = kullaniciId && yetki?.id === kullaniciId ? yetki.yonetici : null;
 
   useEffect(() => {
-    if (!kullaniciId) {
-      setYonetici(null);
-      return;
-    }
+    if (!kullaniciId) return;
     supabase.rpc("is_admin").then(({ data, error }) => {
-      setYonetici(!error && data === true);
+      setYetki({ id: kullaniciId, yonetici: !error && data === true });
     });
   }, [kullaniciId]);
 
@@ -300,6 +299,70 @@ type FormDurumu =
   | { tur: "gelmeyen" }
   | null;
 
+// Panelin seçili aya ait tüm verilerini çeker; hata olursa fırlatır
+async function paneliGetir(seciliAy: string) {
+  const { bas, son } = ayAraligi(seciliAy);
+  const gun = 24 * 60 * 60 * 1000;
+  // Gece vardiyası eşleştirmesi için ayın bir gün öncesi ve sonrası da alınır
+  const aralikBas = new Date(bas.getTime() - gun).toISOString();
+  const aralikSon = new Date(son.getTime() + gun).toISOString();
+  // Bugünkü durum için: dün akşamdan kalan gece vardiyalarını da yakalamak için 18 saat geriye gider
+  const bugunBas = new Date(new Date(`${yerelTarih()}T00:00:00+03:00`).getTime() - 18 * 60 * 60 * 1000).toISOString();
+
+  const [subeD, varD, perler, harler, bugunD, izler, tatD] = await Promise.all([
+    supabase.from("subeler").select("*").order("created_at", { ascending: true }),
+    supabase.from("vardiyalar").select("*").order("created_at", { ascending: true }),
+    tumunuGetir<Personel>((a, b) =>
+      supabase
+        .from("personeller")
+        .select(PERSONEL_KOLONLARI)
+        .order("created_at", { ascending: false })
+        .order("id")
+        .range(a, b)
+    ),
+    tumunuGetir<Hareket>((a, b) =>
+      supabase
+        .from("hareketler")
+        .select(`*, personeller (ad, soyad, sicil_no, tc_kimlik), subeler (ad)`)
+        .gte("created_at", aralikBas)
+        .lt("created_at", aralikSon)
+        .order("created_at", { ascending: true })
+        .order("id")
+        .range(a, b)
+    ),
+    supabase
+      .from("hareketler")
+      .select("id, personel_id, islem_turu, created_at")
+      .gte("created_at", bugunBas)
+      .order("created_at", { ascending: true })
+      .limit(1000),
+    tumunuGetir<Izin>((a, b) =>
+      supabase
+        .from("izinler")
+        .select(`*, personeller (ad, soyad, sicil_no)`)
+        .order("baslangic_tarihi", { ascending: false })
+        .order("id")
+        .range(a, b)
+    ),
+    supabase.from("resmi_tatiller").select("*").order("tarih", { ascending: true }),
+  ]);
+
+  if (subeD.error) throw subeD.error;
+  if (varD.error) throw varD.error;
+  if (bugunD.error) throw bugunD.error;
+  if (tatD.error) throw tatD.error;
+
+  return {
+    subeler: (subeD.data ?? []) as Sube[],
+    vardiyalar: (varD.data ?? []) as Vardiya[],
+    personeller: perler,
+    hareketler: harler,
+    bugunHareketleri: (bugunD.data ?? []) as BugunHareket[],
+    izinler: izler,
+    resmiTatiller: (tatD.data ?? []) as ResmiTatil[],
+  };
+}
+
 function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
   const { bildir, onayla } = useBildirim();
   const bugunTarih = yerelTarih();
@@ -314,6 +377,8 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
   const [resmiTatiller, setResmiTatiller] = useState<ResmiTatil[]>([]);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState<string | null>(null);
+  // "İçeride" hesabındaki 18 saat sınırı için son veri çekme anı
+  const [veriZamani, setVeriZamani] = useState(() => Date.now());
 
   const [seciliAy, setSeciliAy] = useState(bugunTarih.slice(0, 7));
   const [seciliSubeFiltre, setSeciliSubeFiltre] = useState("TUMU");
@@ -323,85 +388,59 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
   // -------------------------------------------------------------------
   // Veri çekme
   // -------------------------------------------------------------------
+  // Yükleme göstergesini açmaz; gösterge gerekiyorsa çağıran taraf açar (bkz. yukleyerekGetir)
   const verileriGetir = useCallback(
-    async (sessiz = false) => {
-      if (!sessiz) setYukleniyor(true);
-      try {
-        const { bas, son } = ayAraligi(seciliAy);
-        const gun = 24 * 60 * 60 * 1000;
-        // Gece vardiyası eşleştirmesi için ayın bir gün öncesi ve sonrası da alınır
-        const aralikBas = new Date(bas.getTime() - gun).toISOString();
-        const aralikSon = new Date(son.getTime() + gun).toISOString();
-        // Bugünkü durum için: dün akşamdan kalan gece vardiyalarını da yakalamak için 18 saat geriye gider
-        const bugunBas = new Date(new Date(`${yerelTarih()}T00:00:00+03:00`).getTime() - 18 * 60 * 60 * 1000).toISOString();
-
-        const [subeD, varD, perler, harler, bugunD, izler, tatD] = await Promise.all([
-          supabase.from("subeler").select("*").order("created_at", { ascending: true }),
-          supabase.from("vardiyalar").select("*").order("created_at", { ascending: true }),
-          tumunuGetir<Personel>((a, b) =>
-            supabase
-              .from("personeller")
-              .select(PERSONEL_KOLONLARI)
-              .order("created_at", { ascending: false })
-              .order("id")
-              .range(a, b)
-          ),
-          tumunuGetir<Hareket>((a, b) =>
-            supabase
-              .from("hareketler")
-              .select(`*, personeller (ad, soyad, sicil_no, tc_kimlik), subeler (ad)`)
-              .gte("created_at", aralikBas)
-              .lt("created_at", aralikSon)
-              .order("created_at", { ascending: true })
-              .order("id")
-              .range(a, b)
-          ),
-          supabase
-            .from("hareketler")
-            .select("id, personel_id, islem_turu, created_at")
-            .gte("created_at", bugunBas)
-            .order("created_at", { ascending: true })
-            .limit(1000),
-          tumunuGetir<Izin>((a, b) =>
-            supabase
-              .from("izinler")
-              .select(`*, personeller (ad, soyad, sicil_no)`)
-              .order("baslangic_tarihi", { ascending: false })
-              .order("id")
-              .range(a, b)
-          ),
-          supabase.from("resmi_tatiller").select("*").order("tarih", { ascending: true }),
-        ]);
-
-        if (subeD.error) throw subeD.error;
-        if (varD.error) throw varD.error;
-        if (bugunD.error) throw bugunD.error;
-        if (tatD.error) throw tatD.error;
-
-        setSubeler((subeD.data ?? []) as Sube[]);
-        setVardiyalar((varD.data ?? []) as Vardiya[]);
-        setPersoneller(perler);
-        setHareketler(harler);
-        setBugunHareketleri((bugunD.data ?? []) as BugunHareket[]);
-        setIzinler(izler);
-        setResmiTatiller((tatD.data ?? []) as ResmiTatil[]);
-        setHataMesaji(null);
-      } catch (err) {
-        setHataMesaji(hataYaz(err));
-      } finally {
-        setYukleniyor(false);
-      }
-    },
-    [seciliAy]
+    () =>
+      paneliGetir(seciliAy)
+        .then((v) => {
+          setSubeler(v.subeler);
+          setVardiyalar(v.vardiyalar);
+          setPersoneller(v.personeller);
+          setHareketler(v.hareketler);
+          setBugunHareketleri(v.bugunHareketleri);
+          setIzinler(v.izinler);
+          setResmiTatiller(v.resmiTatiller);
+          setVeriZamani(Date.now());
+          setHataMesaji(null);
+        })
+        .catch((err) => setHataMesaji(hataYaz(err)))
+        .finally(() => setYukleniyor(false)),
+    // Setter fonksiyonları sabittir; React Compiler bunları açıkça listede görmek istiyor
+    [
+      seciliAy,
+      setSubeler,
+      setVardiyalar,
+      setPersoneller,
+      setHareketler,
+      setBugunHareketleri,
+      setIzinler,
+      setResmiTatiller,
+      setVeriZamani,
+      setHataMesaji,
+      setYukleniyor,
+    ]
   );
 
+  // Ay değişince verileriGetir yeniden oluşur ve bu effect yeniden çalışır.
+  // Yükleme göstergesi ilk açılışta başlangıç değeriyle, ay değişiminde ayDegistir ile açılır.
   useEffect(() => {
     verileriGetir();
-    const zamanlayici = setInterval(() => verileriGetir(true), 60000);
+    const zamanlayici = setInterval(() => verileriGetir(), 60000);
     return () => clearInterval(zamanlayici);
   }, [verileriGetir]);
 
-  const yenile = useCallback(() => verileriGetir(true), [verileriGetir]);
+  const yenile = verileriGetir;
+
+  function yukleyerekGetir() {
+    setYukleniyor(true);
+    verileriGetir();
+  }
+
+  function ayDegistir(ay: string) {
+    if (ay === seciliAy) return;
+    setYukleniyor(true);
+    setSeciliAy(ay);
+  }
 
   // -------------------------------------------------------------------
   // Türetilmiş veriler
@@ -431,7 +470,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
   const bekleyenSayisi = izinler.filter((iz) => iz.durum === "BEKLEMEDE").length;
 
   const bugunOzet: BugunOzet = useMemo(() => {
-    const simdi = Date.now();
+    const simdi = veriZamani;
     const SAAT18 = 18 * 60 * 60 * 1000;
     const bugunTatil = haftaGunu(bugunTarih) === 0 || resmiTatiller.some((t) => t.tarih === bugunTarih);
 
@@ -484,7 +523,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
       }
     }
     return sonuc;
-  }, [personeller, bugunHareketleri, izinler, resmiTatiller, vardiyalar, seciliSubeFiltre, bugunTarih]);
+  }, [personeller, bugunHareketleri, izinler, resmiTatiller, vardiyalar, seciliSubeFiltre, bugunTarih, veriZamani]);
 
   const pinsizSayisi = personeller.filter((p) => p.aktif && !p.pin_tanimli).length;
   const eksikToplam = filtrelenmisPuantaj.reduce((t, p) => t + p.eksikGunler, 0);
@@ -886,7 +925,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
             role="alert"
           >
             <span>Veriler alınamadı: {hataMesaji}</span>
-            <button type="button" className="btn btn-tehlike btn-kucuk" onClick={() => verileriGetir()}>
+            <button type="button" className="btn btn-tehlike btn-kucuk" onClick={yukleyerekGetir}>
               Tekrar dene
             </button>
           </div>
@@ -910,9 +949,9 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
           <PuantajSekmesi
             liste={filtrelenmisPuantaj}
             seciliAy={seciliAy}
-            onAyDegis={setSeciliAy}
+            onAyDegis={ayDegistir}
             onSec={setSeciliPersonelId}
-            onYenile={() => verileriGetir()}
+            onYenile={yukleyerekGetir}
             yukleniyor={yukleniyor}
           />
         )}
@@ -930,8 +969,8 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
           <LoglarSekmesi
             hareketler={ayHareketleri}
             seciliAy={seciliAy}
-            onAyDegis={setSeciliAy}
-            onYenile={() => verileriGetir()}
+            onAyDegis={ayDegistir}
+            onYenile={yukleyerekGetir}
             yukleniyor={yukleniyor}
           />
         )}
