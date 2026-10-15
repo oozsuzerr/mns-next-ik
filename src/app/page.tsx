@@ -28,6 +28,7 @@ import TaleplerSekmesi from "../components/panel/TaleplerSekmesi";
 import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
+import VardiyaPlani from "../components/panel/VardiyaPlani";
 import {
   CikisEksikListesi,
   GelmeyenlerListesi,
@@ -411,6 +412,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
   const [seciliSubeFiltre, setSeciliSubeFiltre] = useState("TUMU");
   const [form, setForm] = useState<FormDurumu>(null);
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
+  const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar">("plan");
 
   // -------------------------------------------------------------------
   // Veri çekme
@@ -1037,12 +1039,38 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
         )}
 
         {aktifSekme === "vardiya" && (
-          <VardiyaSekmesi
-            vardiyalar={vardiyalar}
-            onYeni={() => setForm({ tur: "vardiya", duzenlenen: null })}
-            onDuzenle={(v) => setForm({ tur: "vardiya", duzenlenen: v })}
-            onSil={vardiyaSil}
-          />
+          <div className="space-y-4">
+            <div className="segment" style={{ maxWidth: 320 }} role="tablist" aria-label="Vardiya bölümü">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={vardiyaGorunum === "plan"}
+                data-aktif={vardiyaGorunum === "plan"}
+                onClick={() => setVardiyaGorunum("plan")}
+              >
+                Vardiya planı
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={vardiyaGorunum === "tanimlar"}
+                data-aktif={vardiyaGorunum === "tanimlar"}
+                onClick={() => setVardiyaGorunum("tanimlar")}
+              >
+                Vardiya tanımları
+              </button>
+            </div>
+            {vardiyaGorunum === "plan" ? (
+              <VardiyaPlani personeller={personeller} vardiyalar={vardiyalar} subeFiltre={seciliSubeFiltre} />
+            ) : (
+              <VardiyaSekmesi
+                vardiyalar={vardiyalar}
+                onYeni={() => setForm({ tur: "vardiya", duzenlenen: null })}
+                onDuzenle={(v) => setForm({ tur: "vardiya", duzenlenen: v })}
+                onSil={vardiyaSil}
+              />
+            )}
+          </div>
         )}
       </main>
 
