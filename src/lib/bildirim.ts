@@ -1,7 +1,9 @@
 // Telefona anlık bildirim: tarayıcı tarafı (abone olma / bırakma, olay bildirme).
 // Gönderim sunucuda yapılır (src/app/api/bildirim).
 
-const ACIK_ANAHTAR = (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "").trim();
+import { temizle } from "./supabase";
+
+const ACIK_ANAHTAR = temizle(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY);
 
 export type BildirimDurumu = "desteklenmiyor" | "ana-ekran-gerekli" | "engelli" | "kapali" | "acik";
 
