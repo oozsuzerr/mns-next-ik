@@ -8,6 +8,10 @@ import { Avatar, Ikon, Marka, Modal, useBildirim } from "../../components/ui";
 import { cikisiEksikGirisler, suankiGiris, type MesaiVardiya, type VardiyaBilgisi } from "../../lib/mesai";
 import { gunPlani, planHaritasi, vardiyaCozucu, type GunPlani, type PlanSatiri, type PlanVardiya } from "../../lib/vardiyaPlani";
 import { VardiyamKarti } from "../../components/mobil/Vardiyam";
+import BildirimDugmesi from "../../components/BildirimDugmesi";
+import { olayBildir } from "../../lib/bildirim";
+import { gunYaz, type IzinBakiyesi } from "../../lib/tipler";
+import { DK_MS, VARSAYILAN_AYARLAR } from "../../lib/ayarlar";
 
 interface Sube {
   id: string;
@@ -34,6 +38,18 @@ interface MobilPlan {
   baslangic_saat: string | null;
   bitis_saat: string | null;
   mola_dakika: number | null;
+}
+
+/** Personelin kendi izin talepleri (mobil_ozet) */
+interface Talep {
+  id: string;
+  izin_turu: string;
+  baslangic_tarihi: string;
+  bitis_tarihi: string;
+  baslangic_saat: string | null;
+  bitis_saat: string | null;
+  gun_sayisi: number | null;
+  durum: string | null;
 }
 
 interface Hareket {
@@ -101,6 +117,8 @@ function hataMetni(kod: string | undefined, veri?: Record<string, unknown>): str
       return "Sistemde tanımlı şube bulunamadı.";
     case "KONUM_GECERSIZ":
       return "Konum alınamadı. GPS iznini kontrol edin.";
+    case "SAAT_GECERSIZ":
+      return "Saat aralığı geçersiz. Bitiş saati başlangıçtan sonra olmalı.";
     case "TARIH_GECERSIZ":
       return "Tarih aralığı geçersiz. Bitiş başlangıçtan önce olamaz, en fazla 90 gün seçilebilir.";
     default:
@@ -206,8 +224,14 @@ function MobilGirisEkrani() {
     izin_turu: "Raporlu / İstirahat",
     baslangic_tarihi: "",
     bitis_tarihi: "",
+    baslangic_saat: "09:00",
+    bitis_saat: "11:00",
     aciklama: "",
   });
+  // Şirket kuralları, yıllık izin bakiyesi ve son talepler (mobil_ozet döndürüyorsa)
+  const [mobilAyar, setMobilAyar] = useState<{ cikis_tolerans_dk: number; erken_giris_payi_dk: number } | null>(null);
+  const [yillikIzin, setYillikIzin] = useState<IzinBakiyesi | null>(null);
+  const [talepler, setTalepler] = useState<Talep[] | null>(null);
 
   const oturumuTemizle = useCallback(() => {
     localStorage.removeItem(TOKEN_ANAHTAR);
@@ -218,6 +242,9 @@ function MobilGirisEkrani() {
     setVardiya(null);
     setPlan(null);
     setSonHareketler(null);
+    setMobilAyar(null);
+    setYillikIzin(null);
+    setTalepler(null);
   }, []);
 
   const ozetYukle = useCallback(
@@ -238,6 +265,9 @@ function MobilGirisEkrani() {
       setVardiya(data.vardiya ?? null);
       setPlan(data.plan ?? null);
       setSonHareketler(data.son_hareketler ?? null);
+      setMobilAyar(data.ayarlar ?? null);
+      setYillikIzin(data.yillik_izin ?? null);
+      setTalepler(data.talepler ?? null);
       return true;
     },
     [oturumuTemizle]
@@ -344,16 +374,19 @@ function MobilGirisEkrani() {
       : null;
     const harita = planHaritasi(satirlar);
     const bul = (tarih: string) => gunPlani(harita.get(`ben|${tarih}`), tarih, varsayilan, (id) => vardiyalar.get(id));
-    const cozucu = vardiyaCozucu(bul);
+    const cozucu = vardiyaCozucu(bul, (mobilAyar?.erken_giris_payi_dk ?? VARSAYILAN_AYARLAR.erken_giris_payi_dk) * DK_MS);
     // Plan gelmediyse (SQL güncellenmemiş) eski davranış: sabit varsayılan vardiya
     return { gunPlaniBul: bul, vardiyaBilgisi: plan ? (an: Date) => cozucu(an)?.son ?? null : vardiya };
-  }, [plan, vardiya]);
+  }, [plan, vardiya, mobilAyar]);
 
   const hesapHareketleri = sonHareketler ?? gecmis;
-  const girisZamani = simdi ? suankiGiris(hesapHareketleri, vardiyaBilgisi, simdi.getTime()) : null;
+  const cikisToleransMs = (mobilAyar?.cikis_tolerans_dk ?? VARSAYILAN_AYARLAR.cikis_tolerans_dk) * DK_MS;
+  const girisZamani = simdi ? suankiGiris(hesapHareketleri, vardiyaBilgisi, simdi.getTime(), cikisToleransMs) : null;
   const icerde = girisZamani !== null;
   // Vardiyası bittiği halde çıkışı yapılmamış girişler (yönetici manuel çıkış ekleyene kadar uyarı gösterilir)
-  const cikisiEksikler = simdi ? cikisiEksikGirisler(hesapHareketleri, vardiyaBilgisi, simdi.getTime()) : [];
+  const cikisiEksikler = simdi
+    ? cikisiEksikGirisler(hesapHareketleri, vardiyaBilgisi, simdi.getTime(), cikisToleransMs)
+    : [];
   const gecenDk = girisZamani && simdi ? Math.max(0, Math.floor((simdi.getTime() - girisZamani.getTime()) / 60000)) : 0;
 
   // Durum değişince doğru işlemi önceden seç (önceki değer karşılaştırılarak, render sırasında)
@@ -450,8 +483,11 @@ function MobilGirisEkrani() {
         p_token: token,
         p_tur: izinTalep.izin_turu,
         p_baslangic: izinTalep.baslangic_tarihi,
-        p_bitis: izinTalep.bitis_tarihi,
+        p_bitis: izinTalep.izin_turu === "Saatlik İzin" ? izinTalep.baslangic_tarihi : izinTalep.bitis_tarihi,
         p_aciklama: izinTalep.aciklama.trim() || null,
+        ...(izinTalep.izin_turu === "Saatlik İzin"
+          ? { p_baslangic_saat: izinTalep.baslangic_saat, p_bitis_saat: izinTalep.bitis_saat }
+          : {}),
       });
       if (error) throw error;
       if (!data?.ok) {
@@ -459,9 +495,13 @@ function MobilGirisEkrani() {
         return;
       }
       bildir("Talebiniz İK birimine iletildi.", "basari");
+      // Yöneticinin telefonuna haber ver
+      olayBildir({ olay: "talep", token });
       setIzinAcik(false);
       const bugun = yerelTarih();
-      setIzinTalep({ izin_turu: "Raporlu / İstirahat", baslangic_tarihi: bugun, bitis_tarihi: bugun, aciklama: "" });
+      setIzinTalep({ ...izinTalep, izin_turu: "Raporlu / İstirahat", baslangic_tarihi: bugun, bitis_tarihi: bugun, aciklama: "" });
+      // Talep listesi ve bakiye güncellensin
+      await ozetYukle(token);
     } catch {
       bildir("Talep gönderilemedi. Lütfen tekrar deneyin.", "hata");
     } finally {
@@ -628,6 +668,25 @@ function MobilGirisEkrani() {
       {/* Vardiyam: bugün, yarın ve aylık takvim (plan verisi geldiyse) */}
       {plan && <VardiyamKarti gunPlaniBul={gunPlaniBul} />}
 
+      {/* Telefon bildirimleri */}
+      {token && (
+        <BildirimDugmesi
+          aciklama="İzin talebinizin sonucu, vardiya değişikliği ve unutulan çıkış için bildirim alın."
+          kaydet={async (a) => {
+            const { error } = await supabase.rpc("push_abone_ol", {
+              p_token: token,
+              p_endpoint: a.endpoint,
+              p_p256dh: a.p256dh,
+              p_auth: a.auth,
+            });
+            if (error) throw error;
+          }}
+          birak={async (endpoint) => {
+            await supabase.rpc("push_abonelik_birak", { p_token: token, p_endpoint: endpoint });
+          }}
+        />
+      )}
+
       {/* Çıkışı unutulan günler */}
       {cikisiEksikler.length > 0 && (
         <section
@@ -735,10 +794,46 @@ function MobilGirisEkrani() {
         </span>
         <span className="flex-1">
           <span className="m1 block font-semibold">İzin veya rapor talebi</span>
-          <span className="m3 block text-xs">İK onayına gönderilir, onaylanınca puantaja işlenir.</span>
+          <span className="m3 block text-xs">
+            {yillikIzin?.tanimli
+              ? `Yıllık izin bakiyeniz: ${gunYaz(yillikIzin.kalan)} gün${
+                  yillikIzin.bekleyen ? ` (onay bekleyen ${gunYaz(yillikIzin.bekleyen)})` : ""
+                }`
+              : "İK onayına gönderilir, onaylanınca puantaja işlenir."}
+          </span>
         </span>
         <Ikon ad="sag" className="m3" />
       </button>
+
+      {/* Taleplerim */}
+      {talepler && talepler.length > 0 && (
+        <section>
+          <h2 className="baslik-font m1 mb-2 px-1 text-lg">Taleplerim</h2>
+          <ul className="panel liste overflow-hidden">
+            {talepler.slice(0, 5).map((t) => (
+              <li key={t.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="min-w-0 flex-1">
+                  <span className="m1 block truncate text-sm font-semibold">{t.izin_turu}</span>
+                  <span className="m3 block text-xs">
+                    {t.izin_turu === "Saatlik İzin"
+                      ? `${kisaTarih(t.baslangic_tarihi)}, ${t.baslangic_saat?.slice(0, 5)}-${t.bitis_saat?.slice(0, 5)}`
+                      : t.baslangic_tarihi === t.bitis_tarihi
+                      ? kisaTarih(t.baslangic_tarihi)
+                      : `${kisaTarih(t.baslangic_tarihi)} - ${kisaTarih(t.bitis_tarihi)}`}
+                  </span>
+                </span>
+                <span
+                  className={`rozet ${
+                    t.durum === "ONAYLANDI" ? "rozet-giris" : t.durum === "REDDEDILDI" ? "rozet-hata" : "rozet-uyari"
+                  }`}
+                >
+                  {t.durum === "ONAYLANDI" ? "Onaylandı" : t.durum === "REDDEDILDI" ? "Reddedildi" : "Bekliyor"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Önceki işlemler */}
       {gecmis.length > 0 && (
@@ -796,10 +891,51 @@ function MobilGirisEkrani() {
               >
                 <option value="Raporlu / İstirahat">Sağlık raporu / istirahat</option>
                 <option value="Yıllık İzin">Yıllık ücretli izin</option>
+                <option value="Saatlik İzin">Saatlik izin</option>
                 <option value="Mazeret İzni">Mazeret izni</option>
                 <option value="Ücretsiz İzin">Ücretsiz izin</option>
               </select>
             </div>
+            {(izinTalep.izin_turu === "Yıllık İzin" || izinTalep.izin_turu === "Saatlik İzin") && yillikIzin?.tanimli && (
+              <p className="m2 text-sm">
+                Kalan yıllık izniniz: <strong className="m1">{gunYaz(yillikIzin.kalan)} gün</strong>. Hafta tatili ve
+                resmi tatiller izinden düşmez.
+              </p>
+            )}
+            {izinTalep.izin_turu === "Saatlik İzin" ? (
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="etiket">Tarih</label>
+                  <input
+                    className="girdi sayi"
+                    type="date"
+                    required
+                    value={izinTalep.baslangic_tarihi}
+                    onChange={(e) => setIzinTalep({ ...izinTalep, baslangic_tarihi: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="etiket">Başlangıç</label>
+                  <input
+                    className="girdi sayi"
+                    type="time"
+                    required
+                    value={izinTalep.baslangic_saat}
+                    onChange={(e) => setIzinTalep({ ...izinTalep, baslangic_saat: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="etiket">Bitiş</label>
+                  <input
+                    className="girdi sayi"
+                    type="time"
+                    required
+                    value={izinTalep.bitis_saat}
+                    onChange={(e) => setIzinTalep({ ...izinTalep, bitis_saat: e.target.value })}
+                  />
+                </div>
+              </div>
+            ) : (
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="etiket">Başlangıç</label>
@@ -822,6 +958,7 @@ function MobilGirisEkrani() {
                 />
               </div>
             </div>
+            )}
             <div>
               <label className="etiket">Not veya belge numarası</label>
               <input

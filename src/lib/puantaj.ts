@@ -1,6 +1,7 @@
-import { ayGunSayisi, GUN_ADLARI, gunStr, haftaGunu, sureYaz, yerelSaat, yerelTarih } from "./tarih";
+import { ayGunSayisi, GUN_ADLARI, gunStr, haftaGunu, planAni, sureYaz, yerelSaat, yerelTarih } from "./tarih";
 import { MAKS_VARDIYA_MS, mesaiSonSiniri } from "./mesai";
 import { gunPlani, planHaritasi, vardiyaAni, vardiyaCozucu, type PlanSatiri } from "./vardiyaPlani";
+import { ayarlariTamamla, DK_MS, type Ayarlar } from "./ayarlar";
 
 // ---------------------------------------------------------------------
 // Tipler
@@ -37,6 +38,9 @@ export interface HareketT {
 export interface IzinT {
   personel_id: string;
   izin_turu: string;
+  /** Saatlik izinde başlangıç ve bitiş saati ("10:00:00") */
+  baslangic_saat?: string | null;
+  bitis_saat?: string | null;
   sgk_kodu?: string | null;
   baslangic_tarihi: string;
   bitis_tarihi: string;
@@ -94,6 +98,8 @@ export interface PuantajGirdi {
   vardiyalar: VardiyaT[];
   /** Vardiya planı (yoksa varsayılan vardiya ve Pazar tatili geçerli) */
   planlar?: PlanSatiri[];
+  /** Tolerans kuralları (yoksa varsayılanlar) */
+  ayarlar?: Partial<Ayarlar> | null;
   /** Türkiye saatine göre bugün: "2026-10-13" */
   bugun: string;
   simdi: Date;
@@ -102,9 +108,7 @@ export interface PuantajGirdi {
 // ---------------------------------------------------------------------
 // Kurallar (gerekirse buradan değiştirin)
 // ---------------------------------------------------------------------
-const GECIKME_TOLERANS_DK = 5; // 5 dk'ya kadar gecikme sayılmaz
-const MESAI_TOLERANS_DK = 15; // vardiya bitişinden 15 dk sonrası mesai sayılır
-const MOLA_ESIGI_DK = 240; // 4 saatten uzun çalışmada mola düşülür
+// Gecikme, mesai ve mola eşikleri şirket ayarlarından gelir (bkz. lib/ayarlar.ts)
 
 // ---------------------------------------------------------------------
 // Giriş-çıkış eşleştirme (gece vardiyası ve çoklu çift destekli)
@@ -161,6 +165,8 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
   const ayOnek = `${g.yil}-${String(g.ay).padStart(2, "0")}`;
   const tatilHaritasi = new Map<string, string>(g.resmiTatiller.map((t) => [t.tarih, t.ad]));
   const planlar = planHaritasi(g.planlar ?? []);
+  const ayar = ayarlariTamamla(g.ayarlar);
+  const cikisToleransMs = ayar.cikis_tolerans_dk * DK_MS;
   const vardiyaHaritasi = new Map(g.vardiyalar.map((v) => [v.id, v]));
   const vardiyaBul = (id: string) => vardiyaHaritasi.get(id);
 
@@ -184,7 +190,7 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
 
     const vardiya: VardiyaT | null = p.vardiyalar ?? g.vardiyalar[0] ?? null;
     const gunPlaniBul = (tarih: string) => gunPlani(planlar.get(`${p.id}|${tarih}`), tarih, vardiya, vardiyaBul);
-    const cozucu = vardiyaCozucu(gunPlaniBul);
+    const cozucu = vardiyaCozucu(gunPlaniBul, ayar.erken_giris_payi_dk * DK_MS);
     const bitisBul = (an: Date) => cozucu(an)?.son ?? null;
 
     // Oturum, girişinin ait olduğu planlı vardiyanın gününe yazılır (gece vardiyasına erken giriş dahil)
@@ -228,13 +234,21 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       const tam = oturum.filter((o) => o.giris && o.cikis);
       // Çıkışsız giriş, vardiya bitişi + fazla mesai payı dolana kadar "devam ediyor" sayılır (bkz. lib/mesai.ts)
       const devamEdiyor = (o: Oturum) =>
-        !!o.giris && !o.cikis && g.simdi.getTime() < mesaiSonSiniri(o.giris, bitisBul);
+        !!o.giris && !o.cikis && g.simdi.getTime() < mesaiSonSiniri(o.giris, bitisBul, cikisToleransMs);
       const mesaide = oturum.some(devamEdiyor);
       const eksik = oturum.filter((o) => (!o.giris || !o.cikis) && !devamEdiyor(o));
 
       const aktifIzin = personelIzinleri.find(
-        (iz) => tarih >= iz.baslangic_tarihi && tarih <= iz.bitis_tarihi
+        (iz) => iz.izin_turu !== "Saatlik İzin" && tarih >= iz.baslangic_tarihi && tarih <= iz.bitis_tarihi
       );
+      // O günün onaylı saatlik izinleri (ör. 10:00-12:00): bu aralıktaki gecikme sayılmaz
+      const saatlikIzinler = personelIzinleri
+        .filter((iz) => iz.izin_turu === "Saatlik İzin" && iz.baslangic_tarihi === tarih && iz.baslangic_saat && iz.bitis_saat)
+        .map((iz) => ({
+          bas: planAni(tarih, iz.baslangic_saat as string).getTime(),
+          son: planAni(tarih, iz.bitis_saat as string).getTime(),
+          metin: `${(iz.baslangic_saat as string).slice(0, 5)}-${(iz.bitis_saat as string).slice(0, 5)}`,
+        }));
 
       let durum = "";
       let tip: GunDetay["tip"] = "bos";
@@ -254,6 +268,7 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
         if (oturum.some((o) => o.cikisManuel)) not += "Çıkış: Manuel Düzeltildi. ";
         if (tam.length > 1) not += `${tam.length} giriş-çıkış çifti. `;
         if (aktifIzin) not += "İzinli günde çalışıldı. ";
+        for (const iz of saatlikIzinler) not += `Saatlik izin ${iz.metin}. `;
 
         if (tam.length > 0) {
           const brut = tam.reduce(
@@ -264,7 +279,7 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
           // Mola: o günün planlı vardiyalarının molası (bölünmüş çalışmada toplamı); plan yoksa varsayılan vardiya
           const molaVardiyalari = gp.vardiyalar.length > 0 ? gp.vardiyalar : vardiya ? [vardiya] : [];
           const mola = molaVardiyalari.reduce((t, v) => t + (v.mola_dakika || 0), 0);
-          netDk = molaVardiyalari.length > 0 && brut >= MOLA_ESIGI_DK ? Math.max(0, brut - mola) : brut;
+          netDk = molaVardiyalari.length > 0 && brut >= ayar.mola_esigi_dk ? Math.max(0, brut - mola) : brut;
 
           calisilan++;
           toplamDk += netDk;
@@ -298,12 +313,17 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
               const vCikis = [...kendi].reverse().find((o) => o.giris && o.cikis)?.cikis ?? null;
 
               if (vGiris) {
-                const gecikme = Math.round((vGiris.getTime() - plan.bas) / 60000);
-                if (gecikme > GECIKME_TOLERANS_DK) gecikmeDk += gecikme;
+                // Vardiya başı ile giriş arasındaki süreden, o aralığa denk gelen saatlik izin düşülür
+                const izinliDk = saatlikIzinler.reduce(
+                  (t, iz) => t + Math.max(0, Math.min(iz.son, vGiris.getTime()) - Math.max(iz.bas, plan.bas)) / 60000,
+                  0
+                );
+                const gecikme = Math.round((vGiris.getTime() - plan.bas) / 60000 - izinliDk);
+                if (gecikme > ayar.gecikme_tolerans_dk) gecikmeDk += gecikme;
               }
               if (vCikis) {
                 const mesai = Math.round((vCikis.getTime() - plan.son) / 60000);
-                if (mesai > MESAI_TOLERANS_DK) planDisiDk += mesai;
+                if (mesai > ayar.mesai_tolerans_dk) planDisiDk += mesai;
               }
             }
           }

@@ -198,7 +198,10 @@ export interface VardiyaOrnegi {
  * [başlangıç - 4 sa, bitiş) aralığına düşen vardiyalardan başlangıcı en yakın olanı döner.
  * Böylece 00:00 gece vardiyası için 23:45'te yapılan giriş ertesi günün vardiyasına sayılır.
  */
-export function vardiyaCozucu(gunPlaniBul: (tarih: string) => GunPlani): (an: Date) => VardiyaOrnegi | null {
+export function vardiyaCozucu(
+  gunPlaniBul: (tarih: string) => GunPlani,
+  erkenPayMs = ERKEN_GIRIS_PAYI_MS
+): (an: Date) => VardiyaOrnegi | null {
   return (an: Date) => {
     const t = an.getTime();
     const gun = yerelTarih(an);
@@ -207,7 +210,7 @@ export function vardiyaCozucu(gunPlaniBul: (tarih: string) => GunPlani): (an: Da
     for (const tarih of [gunEkle(gun, -1), gun, gunEkle(gun, 1)]) {
       for (const v of gunPlaniBul(tarih).vardiyalar) {
         const { bas, son } = vardiyaAni(tarih, v);
-        if (t < bas - ERKEN_GIRIS_PAYI_MS || t >= son) continue;
+        if (t < bas - erkenPayMs || t >= son) continue;
         const fark = Math.abs(t - bas);
         if (fark < enYakin) {
           enYakin = fark;

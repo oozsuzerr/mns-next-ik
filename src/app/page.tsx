@@ -17,9 +17,11 @@ import {
   type Sekme,
   type Sube,
   type Vardiya,
+  type IzinBakiyesi,
   type Yetki,
   type YoneticiBilgisi,
 } from "../lib/tipler";
+import { ayarlariTamamla, DK_MS, VARSAYILAN_AYARLAR, type Ayarlar } from "../lib/ayarlar";
 import { ayAdi, ayAraligi, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
 import { cikisiEksikGirisler, suankiGiris } from "../lib/mesai";
 import { gunEkle, gunPlani, planHaritasi, vardiyaCozucu, type PlanSatiri } from "../lib/vardiyaPlani";
@@ -34,9 +36,13 @@ import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
 import VardiyaPlani from "../components/panel/VardiyaPlani";
 import PanelKullanicilari from "../components/panel/PanelKullanicilari";
 import IslemGecmisi from "../components/panel/IslemGecmisi";
+import AyarlarSekmesi from "../components/panel/AyarlarSekmesi";
+import BildirimDugmesi from "../components/BildirimDugmesi";
+import { olayBildir } from "../lib/bildirim";
 import {
   CikisEksikListesi,
   GelmeyenlerListesi,
+  IzinBilgileriFormu,
   IzinFormu,
   ManuelFormu,
   type CikisEksikSatiri,
@@ -386,6 +392,7 @@ type FormDurumu =
   | { tur: "manuel"; baslangic?: ManuelBaslangic }
   | { tur: "gelmeyen" }
   | { tur: "cikisEksik" }
+  | { tur: "izinBilgi"; hedef: Personel }
   | null;
 
 /** Çıkışı eksik girişler bu kadar gün geriye kadar aranır */
@@ -405,7 +412,7 @@ async function paneliGetir(seciliAy: string) {
   const planBas = [yerelTarih(aralikBas), gunEkle(bugun, -CIKIS_EKSIK_GUN - 1)].sort()[0];
   const planSon = [yerelTarih(aralikSon), gunEkle(bugun, 1)].sort()[1];
 
-  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD] = await Promise.all([
+  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD, ayarD, bakiyeD] = await Promise.all([
     supabase.from("subeler").select("*").order("created_at", { ascending: true }),
     supabase.from("vardiyalar").select("*").order("created_at", { ascending: true }),
     tumunuGetir<Personel>((a, b) =>
@@ -457,6 +464,9 @@ async function paneliGetir(seciliAy: string) {
     ).catch(() => [] as PlanSatiri[]),
     // Kapanmış aylar (tablo yoksa boş)
     Promise.resolve(supabase.from("ay_kilitleri").select("ay")).catch(() => ({ data: null })),
+    // Tolerans ayarları ve yıllık izin bakiyeleri (okunamazsa varsayılan / boş)
+    Promise.resolve(supabase.from("sirket_ayarlari").select("*").maybeSingle()).catch(() => ({ data: null })),
+    Promise.resolve(supabase.rpc("izin_bakiyeleri")).catch(() => ({ data: null })),
   ]);
 
   if (subeD.error) throw subeD.error;
@@ -473,6 +483,8 @@ async function paneliGetir(seciliAy: string) {
     resmiTatiller: (tatD.data ?? []) as ResmiTatil[],
     planlar,
     kilitliAylar: ((kilitD.data ?? []) as { ay: string }[]).map((k) => k.ay),
+    ayarlar: ayarlariTamamla(ayarD.data as Partial<Ayarlar> | null),
+    bakiyeler: (bakiyeD.data ?? {}) as Record<string, IzinBakiyesi>,
   };
 }
 
@@ -509,6 +521,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [resmiTatiller, setResmiTatiller] = useState<ResmiTatil[]>([]);
   const [planlar, setPlanlar] = useState<PlanSatiri[]>([]);
   const [kilitliAylar, setKilitliAylar] = useState<string[]>([]);
+  const [ayarlar, setAyarlar] = useState<Ayarlar>(VARSAYILAN_AYARLAR);
+  const [bakiyeler, setBakiyeler] = useState<Record<string, IzinBakiyesi>>({});
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState<string | null>(null);
   // "İçeride" hesabındaki 18 saat sınırı için son veri çekme anı
@@ -518,7 +532,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [seciliSubeFiltre, setSeciliSubeFiltre] = useState("TUMU");
   const [form, setForm] = useState<FormDurumu>(null);
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
-  const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar">("plan");
+  const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar">("plan");
   const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
 
   // -------------------------------------------------------------------
@@ -538,6 +552,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           setResmiTatiller(v.resmiTatiller);
           setPlanlar(v.planlar);
           setKilitliAylar(v.kilitliAylar);
+          setAyarlar(v.ayarlar);
+          setBakiyeler(v.bakiyeler);
           setVeriZamani(Date.now());
           setHataMesaji(null);
         })
@@ -555,6 +571,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       setResmiTatiller,
       setPlanlar,
       setKilitliAylar,
+      setAyarlar,
+      setBakiyeler,
       setVeriZamani,
       setHataMesaji,
       setYukleniyor,
@@ -598,10 +616,11 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         resmiTatiller,
         vardiyalar,
         planlar,
+        ayarlar,
         bugun: bugunTarih,
         simdi: new Date(),
       }),
-    [yil, ayNo, personeller, hareketler, izinler, resmiTatiller, vardiyalar, planlar, bugunTarih]
+    [yil, ayNo, personeller, hareketler, izinler, resmiTatiller, vardiyalar, planlar, ayarlar, bugunTarih]
   );
 
   const filtrelenmisPuantaj = puantajListesi.filter(
@@ -629,10 +648,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     return (p: Personel) => {
       const varsayilan = p.vardiyalar ?? vardiyalar[0] ?? null;
       const gunPlaniBul = (tarih: string) => gunPlani(harita.get(`${p.id}|${tarih}`), tarih, varsayilan, vardiyaBul);
-      const cozucu = vardiyaCozucu(gunPlaniBul);
+      const cozucu = vardiyaCozucu(gunPlaniBul, ayarlar.erken_giris_payi_dk * DK_MS);
       return { gunPlaniBul, cozucu, bitisBul: (an: Date) => cozucu(an)?.son ?? null };
     };
-  }, [planlar, vardiyalar]);
+  }, [planlar, vardiyalar, ayarlar]);
 
   const bugunOzet: BugunOzet = useMemo(() => {
     const simdi = veriZamani;
@@ -666,7 +685,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       const plan = planlari.get(p.id) ?? kisiPlani(p);
       const kisiTatil = resmiTatil || plan.gunPlaniBul(bugunTarih).tatil;
 
-      if (suankiGiris(hs, plan.bitisBul, simdi)) {
+      if (suankiGiris(hs, plan.bitisBul, simdi, ayarlar.cikis_tolerans_dk * DK_MS)) {
         sonuc.iceride.push(p);
       } else if (bugunkuler.length > 0) {
         sonuc.cikti.push(p);
@@ -683,11 +702,11 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       if (ilkGiris) {
         const an = new Date(ilkGiris.created_at);
         const ornek = plan.cozucu(an);
-        if (ornek && (an.getTime() - ornek.bas) / 60000 > 5) sonuc.gec.push(p);
+        if (ornek && (an.getTime() - ornek.bas) / 60000 > ayarlar.gecikme_tolerans_dk) sonuc.gec.push(p);
       }
     }
     return sonuc;
-  }, [personeller, kisiHareketleri, izinler, resmiTatiller, kisiPlani, seciliSubeFiltre, bugunTarih, veriZamani]);
+  }, [personeller, kisiHareketleri, izinler, resmiTatiller, kisiPlani, seciliSubeFiltre, bugunTarih, veriZamani, ayarlar]);
 
   // Çıkış basmayı unutanlar: vardiyası (ve fazla mesai payı) bittiği halde çıkışı olmayan girişler
   const cikisEksikler: CikisEksikSatiri[] = useMemo(() => {
@@ -695,7 +714,12 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     for (const p of personeller) {
       if (!p.aktif || (seciliSubeFiltre !== "TUMU" && p.varsayilan_sube_id !== seciliSubeFiltre)) continue;
       const plan = kisiPlani(p);
-      for (const h of cikisiEksikGirisler(kisiHareketleri.get(p.id) ?? [], plan.bitisBul, veriZamani)) {
+      for (const h of cikisiEksikGirisler(
+        kisiHareketleri.get(p.id) ?? [],
+        plan.bitisBul,
+        veriZamani,
+        ayarlar.cikis_tolerans_dk * DK_MS
+      )) {
         const ornek = plan.cozucu(new Date(h.created_at));
         sonuc.push({
           personel: p,
@@ -708,7 +732,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
     // En eski kayıt en üstte
     return sonuc.sort((a, b) => a.giris.localeCompare(b.giris));
-  }, [personeller, kisiHareketleri, kisiPlani, seciliSubeFiltre, veriZamani]);
+  }, [personeller, kisiHareketleri, kisiPlani, seciliSubeFiltre, veriZamani, ayarlar]);
 
   const pinsizSayisi = personeller.filter((p) => p.aktif && !p.pin_tanimli).length;
   const eksikToplam = filtrelenmisPuantaj.reduce((t, p) => t + p.eksikGunler, 0);
@@ -871,6 +895,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       const { error } = await supabase.from("izinler").update({ durum: yeniDurum }).eq("id", id);
       if (error) throw error;
       bildir(yeniDurum === "ONAYLANDI" ? "Talep onaylandı." : "Talep reddedildi.", "basari");
+      // Personelin telefonuna sonucu bildir
+      const { data } = await supabase.auth.getSession();
+      olayBildir({ olay: "talep_sonuc", izin_id: id }, data.session?.access_token);
       await yenile();
     } catch (err) {
       bildir(hataYaz(err), "hata");
@@ -1152,6 +1179,20 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
         {aktifSekme === "bakis" && (
           <div className="space-y-6">
+            <BildirimDugmesi
+              aciklama="Yeni izin talepleri ve eksik çıkışlar için bu cihaza bildirim gelsin."
+              kaydet={async (a) => {
+                const { error } = await supabase.rpc("panel_push_abone_ol", {
+                  p_endpoint: a.endpoint,
+                  p_p256dh: a.p256dh,
+                  p_auth: a.auth,
+                });
+                if (error) throw error;
+              }}
+              birak={async (endpoint) => {
+                await supabase.rpc("panel_push_abonelik_birak", { p_endpoint: endpoint });
+              }}
+            />
             <HizliIslemler
               cikisEksik={cikisEksikler.length}
               bekleyen={bekleyenSayisi}
@@ -1192,6 +1233,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         {aktifSekme === "talepler" && (
           <TaleplerSekmesi
             izinler={izinler}
+            bakiyeler={bakiyeler}
             onDurum={yetkili("izin") ? izinDurumGuncelle : undefined}
             onSil={yetkili("izin") ? izinSil : undefined}
             onYeni={yetkili("izin") ? () => setForm({ tur: "izin" }) : undefined}
@@ -1248,6 +1290,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             ) : (
               <PersonelSekmesi
                 personeller={filtrelenmisPersoneller}
+                bakiyeler={bakiyeler}
+                onIzinBilgileri={(p) => setForm({ tur: "izinBilgi", hedef: p })}
                 onYeni={yetkili("personel") ? () => setForm({ tur: "personel" }) : undefined}
                 onPin={yetkili("pin") ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
                 onCihaz={yetkili("cihaz") ? cihazSifirla : undefined}
@@ -1259,7 +1303,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
         {aktifSekme === "vardiya" && (
           <div className="space-y-4">
-            <div className="segment" style={{ maxWidth: 320 }} role="tablist" aria-label="Vardiya bölümü">
+            <div className="segment segment-3" style={{ maxWidth: 420 }} role="tablist" aria-label="Vardiya bölümü">
               <button
                 type="button"
                 role="tab"
@@ -1278,8 +1322,19 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               >
                 Vardiya tanımları
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={vardiyaGorunum === "kurallar"}
+                data-aktif={vardiyaGorunum === "kurallar"}
+                onClick={() => setVardiyaGorunum("kurallar")}
+              >
+                Kurallar
+              </button>
             </div>
-            {vardiyaGorunum === "plan" ? (
+            {vardiyaGorunum === "kurallar" ? (
+              <AyarlarSekmesi key={JSON.stringify(ayarlar)} ayarlar={ayarlar} duzenlenebilir={genel} onKayit={yenile} />
+            ) : vardiyaGorunum === "plan" ? (
               <VardiyaPlani
                 personeller={personeller}
                 vardiyalar={vardiyalar}
@@ -1328,6 +1383,15 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         <VardiyaFormu duzenlenen={form.duzenlenen} onKapat={() => setForm(null)} onKayit={yenile} />
       )}
       {form?.tur === "izin" && <IzinFormu personeller={personeller} onKapat={() => setForm(null)} onKayit={yenile} />}
+      {form?.tur === "izinBilgi" && (
+        <IzinBilgileriFormu
+          hedef={form.hedef}
+          bakiye={bakiyeler[form.hedef.id]}
+          duzenlenebilir={yetkili("personel")}
+          onKapat={() => setForm(null)}
+          onKayit={yenile}
+        />
+      )}
       {form?.tur === "manuel" && (
         <ManuelFormu
           personeller={personeller}

@@ -1,23 +1,29 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { Personel } from "../../lib/tipler";
-import { tcMaske } from "../../lib/tipler";
+import type { IzinBakiyesi, Personel } from "../../lib/tipler";
+import { gunYaz, tcMaske } from "../../lib/tipler";
 import { Avatar, Bos, Ikon, Rozet } from "../ui";
 
 function Islemler({
   p,
+  onIzin,
   onPin,
   onCihaz,
   onAktif,
 }: {
   p: Personel;
+  onIzin: (p: Personel) => void;
   onPin?: (p: Personel) => void;
   onCihaz?: (p: Personel) => void;
   onAktif?: (p: Personel) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onIzin(p)}>
+        <Ikon ad="takvim" boyut={14} />
+        İzin
+      </button>
       {onPin && (
         <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onPin(p)}>
           <Ikon ad="anahtar" boyut={14} />
@@ -40,10 +46,15 @@ function Islemler({
   );
 }
 
-function Durumlar({ p }: { p: Personel }) {
+function Durumlar({ p, bakiye }: { p: Personel; bakiye?: IzinBakiyesi }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {p.pin_tanimli ? <Rozet ton="giris">PIN tanımlı</Rozet> : <Rozet ton="hata">PIN yok</Rozet>}
+      {bakiye?.tanimli ? (
+        <Rozet ton={(bakiye.kalan ?? 0) < 0 ? "hata" : "izin"}>İzin {gunYaz(bakiye.kalan)} gün</Rozet>
+      ) : (
+        <Rozet ton="notr">İşe giriş yok</Rozet>
+      )}
       {p.cihaz_id ? <Rozet ton="notr">Cihaz eşleşti</Rozet> : <Rozet ton="uyari">Cihaz boşta</Rozet>}
       {!p.aktif && <Rozet ton="notr">Pasif</Rozet>}
     </div>
@@ -52,12 +63,17 @@ function Durumlar({ p }: { p: Personel }) {
 
 export default function PersonelSekmesi({
   personeller,
+  bakiyeler,
+  onIzinBilgileri,
   onYeni,
   onPin,
   onCihaz,
   onAktif,
 }: {
   personeller: Personel[];
+  /** personel id -> yıllık izin bakiyesi */
+  bakiyeler: Record<string, IzinBakiyesi>;
+  onIzinBilgileri: (p: Personel) => void;
   /** Verilmezse (şube müdürü) ilgili düğmeler gizlenir */
   onYeni?: () => void;
   onPin?: (p: Personel) => void;
@@ -142,11 +158,11 @@ export default function PersonelSekmesi({
                       <td className="m2 sayi">{tcMaske(p.tc_kimlik)}</td>
                       <td className="m2">{p.subeler?.ad || "Atanmamış"}</td>
                       <td>
-                        <Durumlar p={p} />
+                        <Durumlar p={p} bakiye={bakiyeler[p.id]} />
                       </td>
                       <td>
                         <div className="flex justify-end">
-                          <Islemler p={p} onPin={onPin} onCihaz={onCihaz} onAktif={onAktif} />
+                          <Islemler p={p} onIzin={onIzinBilgileri} onPin={onPin} onCihaz={onCihaz} onAktif={onAktif} />
                         </div>
                       </td>
                     </tr>
@@ -169,8 +185,8 @@ export default function PersonelSekmesi({
                       </p>
                     </div>
                   </div>
-                  <Durumlar p={p} />
-                  <Islemler p={p} onPin={onPin} onCihaz={onCihaz} onAktif={onAktif} />
+                  <Durumlar p={p} bakiye={bakiyeler[p.id]} />
+                  <Islemler p={p} onIzin={onIzinBilgileri} onPin={onPin} onCihaz={onCihaz} onAktif={onAktif} />
                 </li>
               ))}
             </ul>

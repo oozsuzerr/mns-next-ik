@@ -30,6 +30,11 @@ export interface Personel {
   aktif: boolean;
   created_at: string;
   pin_tanimli?: boolean;
+  /** Kıdem ve yıllık izin hesabı için */
+  ise_giris_tarihi?: string | null;
+  dogum_tarihi?: string | null;
+  devreden_izin_gun?: number | null;
+  devir_tarihi?: string | null;
   subeler?: { ad: string } | null;
   vardiyalar?: Vardiya | null;
 }
@@ -62,6 +67,11 @@ export interface Izin {
   sgk_kodu?: string | null;
   baslangic_tarihi: string;
   bitis_tarihi: string;
+  /** Saatlik izinde "10:00:00" */
+  baslangic_saat?: string | null;
+  bitis_saat?: string | null;
+  /** İzinden düşülen gün (iş günü; saatlikte kesirli) */
+  gun_sayisi?: number | null;
   aciklama: string | null;
   durum?: string;
   personeller?: { ad: string; soyad: string; sicil_no: string } | null;
@@ -98,7 +108,26 @@ export type Yetki = (typeof YETKILER)[number]["anahtar"];
 export type Sekme = "bakis" | "puantaj" | "talepler" | "genel" | "personel" | "vardiya";
 
 export const PERSONEL_KOLONLARI =
-  "id, sicil_no, tc_kimlik, ad, soyad, departman, varsayilan_sube_id, varsayilan_vardiya_id, rol, cihaz_id, aktif, created_at, pin_tanimli, subeler:varsayilan_sube_id (ad), vardiyalar:varsayilan_vardiya_id (*)";
+  "id, sicil_no, tc_kimlik, ad, soyad, departman, varsayilan_sube_id, varsayilan_vardiya_id, rol, cihaz_id, aktif, created_at, pin_tanimli, ise_giris_tarihi, dogum_tarihi, devreden_izin_gun, devir_tarihi, subeler:varsayilan_sube_id (ad), vardiyalar:varsayilan_vardiya_id (*)";
+
+/** Yıllık izin hesabı (veritabanındaki _yillik_izin_hesapla ile aynı alanlar) */
+export interface IzinBakiyesi {
+  tanimli: boolean;
+  kidem_yil?: number;
+  devreden?: number;
+  hak_edilen?: number;
+  kullanilan?: number;
+  bekleyen?: number;
+  kalan?: number;
+  sonraki_hak_tarihi?: string | null;
+  sonraki_hak_gun?: number | null;
+}
+
+/** 12.5 -> "12,5" */
+export function gunYaz(gun: number | null | undefined): string {
+  const n = Number(gun ?? 0);
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0$/, "").replace(".", ",");
+}
 
 // Supabase en fazla 1000 satır döndürür; hepsini sayfa sayfa çeker.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

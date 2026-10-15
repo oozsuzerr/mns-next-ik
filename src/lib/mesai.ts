@@ -17,7 +17,7 @@ export interface MesaiHareket {
 // ---------------------------------------------------------------------
 /** Bir giriş ile çıkış arasında olabilecek en uzun süre; vardiyası olmayan personelde mesai sınırı */
 export const MAKS_VARDIYA_MS = 18 * 60 * 60 * 1000;
-/** Vardiya bitişinden sonra bu süre boyunca kişi hâlâ mesaide sayılır (fazla mesai payı) */
+/** Vardiya bitişinden sonra bu süre boyunca kişi hâlâ mesaide sayılır (fazla mesai payı; varsayılan, ayarlardan değişir) */
 export const CIKIS_TOLERANS_MS = 6 * 60 * 60 * 1000;
 
 function gunEkle(tarih: string, gun: number): string {
@@ -52,19 +52,20 @@ export function planlananBitis(giris: Date, vardiya: MesaiVardiya): Date {
 export type VardiyaBilgisi = MesaiVardiya | null | undefined | ((giris: Date) => number | null);
 
 /** Çıkış basılmadıysa kişinin en geç ne zamana kadar mesaide sayılacağı (ms) */
-export function mesaiSonSiniri(giris: Date, vardiya: VardiyaBilgisi): number {
+export function mesaiSonSiniri(giris: Date, vardiya: VardiyaBilgisi, toleransMs = CIKIS_TOLERANS_MS): number {
   const enGec = giris.getTime() + MAKS_VARDIYA_MS;
   if (!vardiya) return enGec;
   const bitis = typeof vardiya === "function" ? vardiya(giris) : planlananBitis(giris, vardiya).getTime();
   if (bitis === null) return enGec;
-  return Math.min(bitis + CIKIS_TOLERANS_MS, enGec);
+  return Math.min(bitis + toleransMs, enGec);
 }
 
 /** Son hareket giriş ise ve süresi dolmadıysa o girişin zamanı, değilse null */
 export function suankiGiris(
   hareketler: MesaiHareket[],
   vardiya: VardiyaBilgisi,
-  simdi: number
+  simdi: number,
+  toleransMs = CIKIS_TOLERANS_MS
 ): Date | null {
   let son: MesaiHareket | null = null;
   for (const h of hareketler) {
@@ -72,7 +73,7 @@ export function suankiGiris(
   }
   if (!son || son.islem_turu !== "İşe Giriş") return null;
   const giris = new Date(son.created_at);
-  return simdi < mesaiSonSiniri(giris, vardiya) ? giris : null;
+  return simdi < mesaiSonSiniri(giris, vardiya, toleransMs) ? giris : null;
 }
 
 /**
@@ -83,7 +84,8 @@ export function suankiGiris(
 export function cikisiEksikGirisler<T extends MesaiHareket>(
   hareketler: T[],
   vardiya: VardiyaBilgisi,
-  simdi: number
+  simdi: number,
+  toleransMs = CIKIS_TOLERANS_MS
 ): T[] {
   const sirali = [...hareketler].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -102,6 +104,6 @@ export function cikisiEksikGirisler<T extends MesaiHareket>(
     }
   }
 
-  if (acik && simdi >= mesaiSonSiniri(new Date(acik.created_at), vardiya)) sonuc.push(acik);
+  if (acik && simdi >= mesaiSonSiniri(new Date(acik.created_at), vardiya, toleransMs)) sonuc.push(acik);
   return sonuc;
 }

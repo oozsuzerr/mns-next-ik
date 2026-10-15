@@ -1,31 +1,38 @@
 "use client";
 
-import type { Izin } from "../../lib/tipler";
+import type { Izin, IzinBakiyesi } from "../../lib/tipler";
+import { gunYaz } from "../../lib/tipler";
 import { gunFarki, kisaTarih } from "../../lib/tarih";
 import { Avatar, Bos, Ikon, Rozet, type RozetTon } from "../ui";
 
 function turTon(tur: string): RozetTon {
   if (tur.includes("Rapor")) return "uyari";
-  if (tur.includes("Yıllık")) return "izin";
+  if (tur.includes("Yıllık") || tur.includes("Saatlik")) return "izin";
   return "notr";
 }
 
 function TalepSatiri({
   iz,
+  bakiye,
   onDurum,
   onSil,
 }: {
   iz: Izin;
+  bakiye?: IzinBakiyesi;
   onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
   onSil?: (id: string) => void;
 }) {
   const ad = iz.personeller?.ad ?? "?";
   const soyad = iz.personeller?.soyad ?? "";
+  const saatlik = iz.izin_turu === "Saatlik İzin";
   const gun = gunFarki(iz.baslangic_tarihi, iz.bitis_tarihi);
-  const aralik =
-    iz.baslangic_tarihi === iz.bitis_tarihi
-      ? kisaTarih(iz.baslangic_tarihi)
-      : `${kisaTarih(iz.baslangic_tarihi)} - ${kisaTarih(iz.bitis_tarihi)}`;
+  const aralik = saatlik
+    ? `${kisaTarih(iz.baslangic_tarihi)}, ${iz.baslangic_saat?.slice(0, 5)}-${iz.bitis_saat?.slice(0, 5)}`
+    : iz.baslangic_tarihi === iz.bitis_tarihi
+    ? kisaTarih(iz.baslangic_tarihi)
+    : `${kisaTarih(iz.baslangic_tarihi)} - ${kisaTarih(iz.bitis_tarihi)}`;
+  // Yıllık izinden düşenlerde talep edilen iş günü ve kişinin kalan bakiyesi
+  const yilliktan = iz.izin_turu === "Yıllık İzin" || saatlik;
   const bekliyor = iz.durum === "BEKLEMEDE";
 
   return (
@@ -39,9 +46,22 @@ function TalepSatiri({
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <Rozet ton={turTon(iz.izin_turu)}>{iz.izin_turu}</Rozet>
             <span className="m2 sayi text-sm">
-              {aralik} ({gun} gün)
+              {aralik}
+              {saatlik ? "" : ` (${gun} gün)`}
             </span>
           </div>
+          {yilliktan && (
+            <p className="m3 mt-1 text-xs">
+              {iz.gun_sayisi != null ? `İzinden düşecek: ${gunYaz(iz.gun_sayisi)} iş günü. ` : ""}
+              {bakiye?.tanimli ? (
+                <span style={{ color: (bakiye.kalan ?? 0) - (bekliyor ? iz.gun_sayisi ?? 0 : 0) < 0 ? "var(--hata)" : undefined }}>
+                  Kalan bakiye: {gunYaz(bakiye.kalan)} gün
+                </span>
+              ) : (
+                "İşe giriş tarihi girilmemiş, bakiye bilinmiyor."
+              )}
+            </p>
+          )}
           {iz.aciklama && <p className="m2 mt-1.5 text-sm">{iz.aciklama}</p>}
           {iz.sgk_kodu && <p className="m3 mt-0.5 text-xs">SGK: {iz.sgk_kodu}</p>}
         </div>
@@ -94,11 +114,13 @@ function TalepSatiri({
 
 export default function TaleplerSekmesi({
   izinler,
+  bakiyeler = {},
   onDurum,
   onSil,
   onYeni,
 }: {
   izinler: Izin[];
+  bakiyeler?: Record<string, IzinBakiyesi>;
   /** Verilmezse (izin yetkisi yok) talepler salt okunur gösterilir */
   onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
   onSil?: (id: string) => void;
@@ -128,7 +150,7 @@ export default function TaleplerSekmesi({
           ) : (
             <ul className="liste">
               {bekleyen.map((iz) => (
-                <TalepSatiri key={iz.id} iz={iz} onDurum={onDurum} onSil={onSil} />
+                <TalepSatiri key={iz.id} iz={iz} bakiye={bakiyeler[iz.personel_id]} onDurum={onDurum} onSil={onSil} />
               ))}
             </ul>
           )}
@@ -143,7 +165,7 @@ export default function TaleplerSekmesi({
           ) : (
             <ul className="liste">
               {gecmis.map((iz) => (
-                <TalepSatiri key={iz.id} iz={iz} onDurum={onDurum} onSil={onSil} />
+                <TalepSatiri key={iz.id} iz={iz} bakiye={bakiyeler[iz.personel_id]} onDurum={onDurum} onSil={onSil} />
               ))}
             </ul>
           )}

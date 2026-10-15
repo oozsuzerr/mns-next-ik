@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent, type ReactNode } from "react";
 import { supabase } from "../../lib/supabase";
-import { hataYaz, tcGecerliMi, type Personel, type Sube, type Vardiya } from "../../lib/tipler";
+import { gunYaz, hataYaz, tcGecerliMi, type IzinBakiyesi, type Personel, type Sube, type Vardiya } from "../../lib/tipler";
 import { GUN_ADLARI, kisaTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
 import { Avatar, Ikon, Modal, Rozet, useBildirim } from "../ui";
 
@@ -385,12 +385,15 @@ export function IzinFormu({
     sgk_kodu: "01 - İstirahat / Sağlık Raporu",
     baslangic_tarihi: bugun,
     bitis_tarihi: bugun,
+    baslangic_saat: "09:00",
+    bitis_saat: "11:00",
     aciklama: "",
   });
+  const saatlik = f.izin_turu === "Saatlik İzin";
 
   function turDegis(tur: string) {
     let kod = "01 - İstirahat / Sağlık Raporu";
-    if (tur === "Yıllık İzin") kod = "Ücretli İzin (SGK Bildirilmez)";
+    if (tur === "Yıllık İzin" || tur === "Saatlik İzin") kod = "Ücretli İzin (SGK Bildirilmez)";
     else if (tur === "Ücretsiz İzin") kod = "05 - Ücretsiz İzin";
     else if (tur === "Mazeret İzni") kod = "13 - Diğer Nedenler";
     setF({ ...f, izin_turu: tur, sgk_kodu: kod });
@@ -402,8 +405,12 @@ export function IzinFormu({
       bildir("Lütfen bir personel seçin.", "hata");
       return;
     }
-    if (f.bitis_tarihi < f.baslangic_tarihi) {
+    if (!saatlik && f.bitis_tarihi < f.baslangic_tarihi) {
       bildir("Bitiş tarihi başlangıçtan önce olamaz.", "hata");
+      return;
+    }
+    if (saatlik && f.bitis_saat <= f.baslangic_saat) {
+      bildir("Bitiş saati başlangıçtan sonra olmalı.", "hata");
       return;
     }
     setYukleniyor(true);
@@ -414,7 +421,9 @@ export function IzinFormu({
           izin_turu: f.izin_turu,
           sgk_kodu: f.sgk_kodu,
           baslangic_tarihi: f.baslangic_tarihi,
-          bitis_tarihi: f.bitis_tarihi,
+          bitis_tarihi: saatlik ? f.baslangic_tarihi : f.bitis_tarihi,
+          baslangic_saat: saatlik ? f.baslangic_saat : null,
+          bitis_saat: saatlik ? f.bitis_saat : null,
           aciklama: f.aciklama.trim() || null,
           durum: "ONAYLANDI",
         },
@@ -449,6 +458,7 @@ export function IzinFormu({
           <select className="girdi" value={f.izin_turu} onChange={(e) => turDegis(e.target.value)}>
             <option value="Raporlu / İstirahat">Sağlık raporu / istirahat</option>
             <option value="Yıllık İzin">Yıllık ücretli izin</option>
+            <option value="Saatlik İzin">Saatlik izin (yıllık izinden düşer)</option>
             <option value="Mazeret İzni">Mazeret / idari izin</option>
             <option value="Ücretsiz İzin">Ücretsiz izin</option>
           </select>
@@ -461,6 +471,37 @@ export function IzinFormu({
             <option value="Ücretli İzin (SGK Bildirilmez)">Ücretli İzin (SGK bildirilmez)</option>
           </select>
         </Alan>
+        {saatlik ? (
+          <div className="grid grid-cols-3 gap-3">
+            <Alan etiket="Tarih">
+              <input
+                className="girdi sayi"
+                type="date"
+                required
+                value={f.baslangic_tarihi}
+                onChange={(e) => setF({ ...f, baslangic_tarihi: e.target.value })}
+              />
+            </Alan>
+            <Alan etiket="Başlangıç">
+              <input
+                className="girdi sayi"
+                type="time"
+                required
+                value={f.baslangic_saat}
+                onChange={(e) => setF({ ...f, baslangic_saat: e.target.value })}
+              />
+            </Alan>
+            <Alan etiket="Bitiş">
+              <input
+                className="girdi sayi"
+                type="time"
+                required
+                value={f.bitis_saat}
+                onChange={(e) => setF({ ...f, bitis_saat: e.target.value })}
+              />
+            </Alan>
+          </div>
+        ) : (
         <div className="grid grid-cols-2 gap-3">
           <Alan etiket="Başlangıç">
             <input
@@ -481,6 +522,7 @@ export function IzinFormu({
             />
           </Alan>
         </div>
+        )}
         <Alan etiket="Açıklama veya belge no">
           <input
             className="girdi"
@@ -743,6 +785,148 @@ export function CikisEksikListesi({
           Kapat
         </button>
       </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Kıdem ve yıllık izin bilgileri
+// ---------------------------------------------------------------------
+export function IzinBilgileriFormu({
+  hedef,
+  bakiye,
+  duzenlenebilir,
+  onKapat,
+  onKayit,
+}: {
+  hedef: Personel;
+  bakiye?: IzinBakiyesi;
+  /** "Personel düzenleme" yetkisi yoksa yalnızca görüntülenir */
+  duzenlenebilir: boolean;
+  onKapat: () => void;
+  onKayit: () => void;
+}) {
+  const { bildir } = useBildirim();
+  const [yukleniyor, setYukleniyor] = useState(false);
+  const [f, setF] = useState({
+    ise_giris_tarihi: hedef.ise_giris_tarihi ?? "",
+    dogum_tarihi: hedef.dogum_tarihi ?? "",
+    devreden_izin_gun: String(hedef.devreden_izin_gun ?? 0),
+    devir_tarihi: hedef.devir_tarihi ?? "",
+  });
+
+  async function kaydet(e: FormEvent) {
+    e.preventDefault();
+    const devreden = Number(f.devreden_izin_gun.replace(",", "."));
+    if (!Number.isFinite(devreden) || devreden < -60 || devreden > 365) {
+      bildir("Devreden izin -60 ile 365 gün arasında olmalı.", "hata");
+      return;
+    }
+    if (devreden !== 0 && !f.devir_tarihi) {
+      bildir("Devreden izin girdiyseniz hangi tarih itibarıyla olduğunu da girin.", "hata");
+      return;
+    }
+    setYukleniyor(true);
+    try {
+      const { error } = await supabase
+        .from("personeller")
+        .update({
+          ise_giris_tarihi: f.ise_giris_tarihi || null,
+          dogum_tarihi: f.dogum_tarihi || null,
+          devreden_izin_gun: devreden,
+          devir_tarihi: f.devir_tarihi || null,
+        })
+        .eq("id", hedef.id);
+      if (error) throw error;
+      bildir("İzin bilgileri kaydedildi; bakiye yeniden hesaplandı.", "basari");
+      onKayit();
+      onKapat();
+    } catch (err) {
+      bildir(hataYaz(err), "hata");
+    } finally {
+      setYukleniyor(false);
+    }
+  }
+
+  return (
+    <Modal onKapat={onKapat} baslik={`${hedef.ad} ${hedef.soyad}: yıllık izin`}>
+      {bakiye?.tanimli ? (
+        <div className="panel-ic mb-4 grid grid-cols-2 gap-3 p-4 text-sm">
+          <div>
+            <p className="m3 text-xs">Kalan</p>
+            <p className="baslik-font sayi m1 text-2xl">{gunYaz(bakiye.kalan)} gün</p>
+          </div>
+          <div>
+            <p className="m3 text-xs">Kıdem</p>
+            <p className="baslik-font sayi m1 text-2xl">{bakiye.kidem_yil} yıl</p>
+          </div>
+          <p className="m2 col-span-2 text-xs">
+            Devreden {gunYaz(bakiye.devreden)} + hak edilen {gunYaz(bakiye.hak_edilen)} − kullanılan{" "}
+            {gunYaz(bakiye.kullanilan)}
+            {bakiye.bekleyen ? `, onay bekleyen ${gunYaz(bakiye.bekleyen)}` : ""}
+            {bakiye.sonraki_hak_tarihi
+              ? `. Sonraki hak: ${kisaTarih(bakiye.sonraki_hak_tarihi)} tarihinde ${bakiye.sonraki_hak_gun} gün.`
+              : "."}
+          </p>
+        </div>
+      ) : (
+        <p className="m2 mb-4 text-sm">Bakiye hesaplanması için işe giriş tarihini girin.</p>
+      )}
+      <form onSubmit={kaydet} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Alan etiket="İşe giriş tarihi">
+            <input
+              className="girdi sayi"
+              type="date"
+              disabled={!duzenlenebilir}
+              value={f.ise_giris_tarihi}
+              onChange={(e) => setF({ ...f, ise_giris_tarihi: e.target.value })}
+            />
+          </Alan>
+          <Alan etiket="Doğum tarihi" ipucu="18 yaş altı ve 50 yaş üstüne en az 20 gün">
+            <input
+              className="girdi sayi"
+              type="date"
+              disabled={!duzenlenebilir}
+              value={f.dogum_tarihi}
+              onChange={(e) => setF({ ...f, dogum_tarihi: e.target.value })}
+            />
+          </Alan>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Alan etiket="Devreden izin (gün)" ipucu="Sisteme geçişteki kalan izin">
+            <input
+              className="girdi sayi"
+              inputMode="decimal"
+              disabled={!duzenlenebilir}
+              value={f.devreden_izin_gun}
+              onChange={(e) => setF({ ...f, devreden_izin_gun: e.target.value })}
+            />
+          </Alan>
+          <Alan etiket="Hangi tarih itibarıyla" ipucu="Bu tarihten önceki hak ve kullanımlar sayılmaz">
+            <input
+              className="girdi sayi"
+              type="date"
+              disabled={!duzenlenebilir}
+              value={f.devir_tarihi}
+              onChange={(e) => setF({ ...f, devir_tarihi: e.target.value })}
+            />
+          </Alan>
+        </div>
+        <p className="ipucu">
+          Hak: 1-5 yıl 14 gün, 6-14 yıl 20 gün, 15 yıl ve üstü 26 gün; her işe giriş yıldönümünde eklenir. Kullanım iş
+          günü olarak sayılır (hafta tatili ve resmi tatiller hariç); saatlik izinler güne çevrilerek düşer.
+        </p>
+        {duzenlenebilir ? (
+          <Altlik onKapat={onKapat} yukleniyor={yukleniyor} kaydetEtiket="Kaydet" />
+        ) : (
+          <div className="flex justify-end">
+            <button type="button" className="btn btn-ana" onClick={onKapat}>
+              Kapat
+            </button>
+          </div>
+        )}
+      </form>
     </Modal>
   );
 }

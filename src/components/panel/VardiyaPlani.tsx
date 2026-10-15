@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
+import { olayBildir } from "../../lib/bildirim";
 import { hataYaz, tumunuGetir, type Personel, type Vardiya } from "../../lib/tipler";
 import { GUN_ADLARI, ayAdi, haftaGunu, kisaTarih, yerelTarih } from "../../lib/tarih";
 import {
@@ -64,7 +65,10 @@ async function planYaz(
       .in("tarih", tarihler);
     if (error) throw error;
   }
-  if (!yeni) return;
+  if (!yeni) {
+    planBildir(personeller, tarihler);
+    return;
+  }
 
   const satirlar: Omit<PlanSatiri, "id">[] = personeller.flatMap((p) =>
     tarihler.flatMap((tarih): Omit<PlanSatiri, "id">[] =>
@@ -83,6 +87,14 @@ async function planYaz(
     const { error } = await supabase.from("vardiya_plani").insert(grup);
     if (error) throw error;
   }
+  planBildir(personeller, tarihler);
+}
+
+/** Etkilenen personele telefon bildirimi (sunucu yalnızca önümüzdeki 7 gün için gönderir) */
+function planBildir(personeller: Personel[], tarihler: string[]) {
+  supabase.auth.getSession().then(({ data }) =>
+    olayBildir({ olay: "plan", personel_idler: personeller.map((p) => p.id), tarihler }, data.session?.access_token)
+  );
 }
 
 function planHatasi(err: unknown): string {
