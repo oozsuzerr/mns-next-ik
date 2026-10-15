@@ -1080,3 +1080,54 @@ textarea {
 .plan-cip-varsayilan {
   opacity: 0.45;
 }
+
+/* ---------- Mobil vardiya takvimi ---------- */
+.takvim-izgara {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+.takvim-baslik {
+  padding-bottom: 4px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--m3);
+}
+.takvim-baslik[data-pazar="true"] {
+  color: var(--cikis);
+}
+.takvim-gun {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 54px;
+  padding: 4px 1px;
+  border: 1px solid var(--cizgi);
+  border-radius: 9px;
+  background: var(--yuzey);
+  cursor: pointer;
+}
+.takvim-gun[data-gecmis="true"] {
+  opacity: 0.55;
+}
+.takvim-gun[data-bugun="true"] {
+  border-color: var(--mark);
+  background: var(--mark-acik);
+  opacity: 1;
+}
+.takvim-gun[data-secili="true"] {
+  box-shadow: 0 0 0 2px var(--m1);
+  opacity: 1;
+}
+.takvim-sayi {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--m1);
+}
+.takvim-cip {
+  max-width: 100%;
+  padding: 1px 3px;
+  font-size: 10px;
+}

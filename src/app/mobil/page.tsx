@@ -6,7 +6,8 @@ import { supabase } from "../../lib/supabase";
 import { kisaTarih, selamlama, sureYaz, uzunTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
 import { Avatar, Ikon, Marka, Modal, useBildirim } from "../../components/ui";
 import { cikisiEksikGirisler, suankiGiris, type MesaiVardiya, type VardiyaBilgisi } from "../../lib/mesai";
-import { gunPlani, planHaritasi, vardiyaCozucu, type PlanSatiri, type PlanVardiya } from "../../lib/vardiyaPlani";
+import { gunPlani, planHaritasi, vardiyaCozucu, type GunPlani, type PlanSatiri, type PlanVardiya } from "../../lib/vardiyaPlani";
+import { VardiyamKarti } from "../../components/mobil/Vardiyam";
 
 interface Sube {
   id: string;
@@ -313,9 +314,12 @@ function MobilGirisEkrani() {
   const sinirda = !!yakin && yakin.mesafe <= Number(yakin.sube.limit_metre);
 
   // Mesai durumu: son hareket "giriş" ise ve vardiyası (fazla mesai payıyla) bitmediyse içeridedir
-  const vardiyaBilgisi: VardiyaBilgisi = useMemo(() => {
-    if (!plan) return vardiya;
-    const satirlar: PlanSatiri[] = plan.map((x, i) => ({
+  // Plan çözümü: bir günün geçerli planı (ekran için) ve mesai hesabı için vardiya bilgisi
+  const { gunPlaniBul, vardiyaBilgisi } = useMemo((): {
+    gunPlaniBul: (tarih: string) => GunPlani;
+    vardiyaBilgisi: VardiyaBilgisi;
+  } => {
+    const satirlar: PlanSatiri[] = (plan ?? []).map((x, i) => ({
       id: String(i),
       personel_id: "ben",
       tarih: x.tarih,
@@ -324,7 +328,7 @@ function MobilGirisEkrani() {
       sube_id: null,
     }));
     const vardiyalar = new Map<string, PlanVardiya>();
-    for (const x of plan) {
+    for (const x of plan ?? []) {
       if (x.vardiya_id && x.baslangic_saat && x.bitis_saat) {
         vardiyalar.set(x.vardiya_id, {
           id: x.vardiya_id,
@@ -339,8 +343,10 @@ function MobilGirisEkrani() {
       ? { id: "varsayilan", ad: vardiya.ad ?? "Vardiya", mola_dakika: vardiya.mola_dakika ?? 0, ...vardiya }
       : null;
     const harita = planHaritasi(satirlar);
-    const cozucu = vardiyaCozucu((tarih) => gunPlani(harita.get(`ben|${tarih}`), tarih, varsayilan, (id) => vardiyalar.get(id)));
-    return (an: Date) => cozucu(an)?.son ?? null;
+    const bul = (tarih: string) => gunPlani(harita.get(`ben|${tarih}`), tarih, varsayilan, (id) => vardiyalar.get(id));
+    const cozucu = vardiyaCozucu(bul);
+    // Plan gelmediyse (SQL güncellenmemiş) eski davranış: sabit varsayılan vardiya
+    return { gunPlaniBul: bul, vardiyaBilgisi: plan ? (an: Date) => cozucu(an)?.son ?? null : vardiya };
   }, [plan, vardiya]);
 
   const hesapHareketleri = sonHareketler ?? gecmis;
@@ -618,6 +624,9 @@ function MobilGirisEkrani() {
         </p>
         <p className="m2 mt-1 text-sm">{uzunTarih()}</p>
       </section>
+
+      {/* Vardiyam: bugün, yarın ve aylık takvim (plan verisi geldiyse) */}
+      {plan && <VardiyamKarti gunPlaniBul={gunPlaniBul} />}
 
       {/* Çıkışı unutulan günler */}
       {cikisiEksikler.length > 0 && (
