@@ -17,6 +17,7 @@ import {
   type Sekme,
   type Sube,
   type Vardiya,
+  type YoneticiBilgisi,
 } from "../lib/tipler";
 import { ayAdi, ayAraligi, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
 import { cikisiEksikGirisler, suankiGiris } from "../lib/mesai";
@@ -30,6 +31,7 @@ import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
 import VardiyaPlani from "../components/panel/VardiyaPlani";
+import PanelKullanicilari from "../components/panel/PanelKullanicilari";
 import {
   CikisEksikListesi,
   GelmeyenlerListesi,
@@ -58,7 +60,7 @@ export default function Home() {
   const [oturum, setOturum] = useState<Session | null>(null);
   const [hazir, setHazir] = useState(false);
   // Yetki sonucu, sorgulandığı kullanıcıyla birlikte tutulur; kullanıcı değişince otomatik geçersiz olur
-  const [yetki, setYetki] = useState<{ id: string; yonetici: boolean } | null>(null);
+  const [yetki, setYetki] = useState<{ id: string; bilgi: YoneticiBilgisi | false } | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -72,13 +74,11 @@ export default function Home() {
   }, []);
 
   const kullaniciId = oturum?.user.id;
-  const yonetici = kullaniciId && yetki?.id === kullaniciId ? yetki.yonetici : null;
+  const yonetici = kullaniciId && yetki?.id === kullaniciId ? yetki.bilgi : null;
 
   useEffect(() => {
     if (!kullaniciId) return;
-    supabase.rpc("is_admin").then(({ data, error }) => {
-      setYetki({ id: kullaniciId, yonetici: !error && data === true });
-    });
+    yetkiGetir().then((bilgi) => setYetki({ id: kullaniciId, bilgi }));
   }, [kullaniciId]);
 
   async function cikisYap() {
@@ -113,7 +113,18 @@ export default function Home() {
     );
   }
 
-  return <Panel eposta={oturum.user.email || ""} onCikis={cikisYap} />;
+  return <Panel eposta={oturum.user.email || ""} yetki={yonetici} onCikis={cikisYap} />;
+}
+
+/**
+ * Giriş yapan kullanıcının panel rolü; panel kullanıcısı değilse false.
+ * Rol SQL'i henüz çalıştırılmadıysa (yonetici_bilgisi yok) eski is_admin kontrolüne düşer.
+ */
+async function yetkiGetir(): Promise<YoneticiBilgisi | false> {
+  const { data, error } = await supabase.rpc("yonetici_bilgisi");
+  if (!error) return data ? (data as YoneticiBilgisi) : false;
+  const eski = await supabase.rpc("is_admin");
+  return !eski.error && eski.data === true ? { rol: "GENEL", ad: null, subeler: [] } : false;
 }
 
 function YoneticiGiris() {
@@ -408,8 +419,10 @@ async function paneliGetir(seciliAy: string) {
   };
 }
 
-function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
+function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilgisi; onCikis: () => void }) {
   const { bildir, onayla } = useBildirim();
+  // Şube müdürü yalnızca kendi şubelerini görür (veritabanı kuralları da bunu zorunlu kılar)
+  const genel = yetki.rol === "GENEL";
   const bugunTarih = yerelTarih();
 
   const [aktifSekme, setAktifSekme] = useState<Sekme>("bakis");
@@ -431,6 +444,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
   const [form, setForm] = useState<FormDurumu>(null);
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar">("plan");
+  const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar">("personel");
 
   // -------------------------------------------------------------------
   // Veri çekme
@@ -885,6 +899,9 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
           <p className="truncate px-3 pt-2 text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
             {eposta}
           </p>
+          <p className="truncate px-3 text-xs" style={{ color: "rgba(255,255,255,0.5)" }}>
+            {genel ? "Genel yönetici" : `Şube müdürü: ${subeler.map((s) => s.ad).join(", ") || "şube atanmamış"}`}
+          </p>
         </div>
       </aside>
 
@@ -963,18 +980,20 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
             >
               {(kapat) => (
                 <>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="menu-oge"
-                    onClick={() => {
-                      kapat();
-                      setForm({ tur: "personel" });
-                    }}
-                  >
-                    <Ikon ad="personel" boyut={16} />
-                    Yeni personel
-                  </button>
+                  {genel && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="menu-oge"
+                      onClick={() => {
+                        kapat();
+                        setForm({ tur: "personel" });
+                      }}
+                    >
+                      <Ikon ad="personel" boyut={16} />
+                      Yeni personel
+                    </button>
+                  )}
                   <button
                     type="button"
                     role="menuitem"
@@ -1032,7 +1051,7 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
               cikisEksik={cikisEksikler.length}
               onCikisEksik={() => setForm({ tur: "cikisEksik" })}
               bekleyen={bekleyenSayisi}
-              pinsiz={pinsizSayisi}
+              pinsiz={genel ? pinsizSayisi : 0}
               eksik={eksikToplam}
               devamsiz={devamsizToplam}
               donem={ayAdi(seciliAy)}
@@ -1072,13 +1091,41 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
         )}
 
         {aktifSekme === "personel" && (
-          <PersonelSekmesi
-            personeller={filtrelenmisPersoneller}
-            onYeni={() => setForm({ tur: "personel" })}
-            onPin={(p) => setForm({ tur: "pin", hedef: p })}
-            onCihaz={cihazSifirla}
-            onAktif={personelAktifDegistir}
-          />
+          <div className="space-y-4">
+            {genel && (
+              <div className="segment" style={{ maxWidth: 320 }} role="tablist" aria-label="Personel bölümü">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={personelGorunum === "personel"}
+                  data-aktif={personelGorunum === "personel"}
+                  onClick={() => setPersonelGorunum("personel")}
+                >
+                  Personel
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={personelGorunum === "kullanicilar"}
+                  data-aktif={personelGorunum === "kullanicilar"}
+                  onClick={() => setPersonelGorunum("kullanicilar")}
+                >
+                  Panel kullanıcıları
+                </button>
+              </div>
+            )}
+            {genel && personelGorunum === "kullanicilar" ? (
+              <PanelKullanicilari subeler={subeler} />
+            ) : (
+              <PersonelSekmesi
+                personeller={filtrelenmisPersoneller}
+                onYeni={genel ? () => setForm({ tur: "personel" }) : undefined}
+                onPin={genel ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
+                onCihaz={cihazSifirla}
+                onAktif={genel ? personelAktifDegistir : undefined}
+              />
+            )}
+          </div>
         )}
 
         {aktifSekme === "vardiya" && (
@@ -1113,9 +1160,9 @@ function Panel({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
             ) : (
               <VardiyaSekmesi
                 vardiyalar={vardiyalar}
-                onYeni={() => setForm({ tur: "vardiya", duzenlenen: null })}
-                onDuzenle={(v) => setForm({ tur: "vardiya", duzenlenen: v })}
-                onSil={vardiyaSil}
+                onYeni={genel ? () => setForm({ tur: "vardiya", duzenlenen: null }) : undefined}
+                onDuzenle={genel ? (v) => setForm({ tur: "vardiya", duzenlenen: v }) : undefined}
+                onSil={genel ? vardiyaSil : undefined}
               />
             )}
           </div>

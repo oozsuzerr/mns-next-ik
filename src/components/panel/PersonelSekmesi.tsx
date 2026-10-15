@@ -12,26 +12,30 @@ function Islemler({
   onAktif,
 }: {
   p: Personel;
-  onPin: (p: Personel) => void;
+  onPin?: (p: Personel) => void;
   onCihaz: (p: Personel) => void;
-  onAktif: (p: Personel) => void;
+  onAktif?: (p: Personel) => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onPin(p)}>
-        <Ikon ad="anahtar" boyut={14} />
-        PIN
-      </button>
+      {onPin && (
+        <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onPin(p)}>
+          <Ikon ad="anahtar" boyut={14} />
+          PIN
+        </button>
+      )}
       {p.cihaz_id && (
         <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onCihaz(p)}>
           <Ikon ad="kilitac" boyut={14} />
           Kilidi aç
         </button>
       )}
-      <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => onAktif(p)}>
-        <Ikon ad="guc" boyut={14} />
-        {p.aktif ? "Pasife al" : "Aktif et"}
-      </button>
+      {onAktif && (
+        <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => onAktif(p)}>
+          <Ikon ad="guc" boyut={14} />
+          {p.aktif ? "Pasife al" : "Aktif et"}
+        </button>
+      )}
     </div>
   );
 }
@@ -54,10 +58,11 @@ export default function PersonelSekmesi({
   onAktif,
 }: {
   personeller: Personel[];
-  onYeni: () => void;
-  onPin: (p: Personel) => void;
+  /** Verilmezse (şube müdürü) ilgili düğmeler gizlenir */
+  onYeni?: () => void;
+  onPin?: (p: Personel) => void;
   onCihaz: (p: Personel) => void;
-  onAktif: (p: Personel) => void;
+  onAktif?: (p: Personel) => void;
 }) {
   const [ara, setAra] = useState("");
 
@@ -83,10 +88,12 @@ export default function PersonelSekmesi({
             aria-label="Personel ara"
           />
         </div>
-        <button type="button" className="btn btn-ana btn-kucuk ml-auto" onClick={onYeni}>
-          <Ikon ad="arti" boyut={14} />
-          Yeni personel
-        </button>
+        {onYeni && (
+          <button type="button" className="btn btn-ana btn-kucuk ml-auto" onClick={onYeni}>
+            <Ikon ad="arti" boyut={14} />
+            Yeni personel
+          </button>
+        )}
       </div>
 
       <div className="panel overflow-hidden">
@@ -96,7 +103,7 @@ export default function PersonelSekmesi({
             baslik={personeller.length === 0 ? "Henüz personel yok" : "Eşleşen kayıt yok"}
             metin={personeller.length === 0 ? "İlk personeli ekleyerek başlayın." : "Aramayı değiştirin."}
           >
-            {personeller.length === 0 && (
+            {personeller.length === 0 && onYeni && (
               <button type="button" className="btn btn-ana" onClick={onYeni}>
                 <Ikon ad="arti" boyut={16} />
                 Yeni personel

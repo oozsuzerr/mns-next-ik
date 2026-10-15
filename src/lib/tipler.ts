@@ -73,6 +73,13 @@ export interface ResmiTatil {
   ad: string;
 }
 
+/** Panel kullanıcısının rolü: GENEL her şeyi yönetir, SUBE yalnızca atandığı şubeleri */
+export interface YoneticiBilgisi {
+  rol: "GENEL" | "SUBE";
+  ad: string | null;
+  subeler: string[];
+}
+
 export type Sekme = "bakis" | "puantaj" | "talepler" | "genel" | "personel" | "vardiya";
 
 export const PERSONEL_KOLONLARI =

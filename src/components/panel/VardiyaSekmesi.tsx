@@ -38,27 +38,32 @@ export default function VardiyaSekmesi({
   onSil,
 }: {
   vardiyalar: Vardiya[];
-  onYeni: () => void;
-  onDuzenle: (v: Vardiya) => void;
-  onSil: (v: Vardiya) => void;
+  /** Verilmezse (şube müdürü) tanımlar salt okunur gösterilir */
+  onYeni?: () => void;
+  onDuzenle?: (v: Vardiya) => void;
+  onSil?: (v: Vardiya) => void;
 }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <p className="m2 text-sm">Mola ve mesai saatleri puantaj hesabının temelidir.</p>
-        <button type="button" className="btn btn-ana btn-kucuk" onClick={onYeni}>
-          <Ikon ad="arti" boyut={14} />
-          Yeni vardiya
-        </button>
+        {onYeni && (
+          <button type="button" className="btn btn-ana btn-kucuk" onClick={onYeni}>
+            <Ikon ad="arti" boyut={14} />
+            Yeni vardiya
+          </button>
+        )}
       </div>
 
       {vardiyalar.length === 0 ? (
         <div className="panel">
           <Bos ikon="vardiya" baslik="Henüz vardiya tanımlanmadı" metin="Personelin çalışma saatlerini belirlemek için bir vardiya ekleyin.">
-            <button type="button" className="btn btn-ana" onClick={onYeni}>
-              <Ikon ad="arti" boyut={16} />
-              Yeni vardiya
-            </button>
+            {onYeni && (
+              <button type="button" className="btn btn-ana" onClick={onYeni}>
+                <Ikon ad="arti" boyut={16} />
+                Yeni vardiya
+              </button>
+            )}
           </Bos>
         </div>
       ) : (
@@ -84,16 +89,18 @@ export default function VardiyaSekmesi({
                 <div className="mt-4">
                   <SaatCubugu bas={v.baslangic_saat} bit={v.bitis_saat} />
                 </div>
-                <div className="kenar-ust mt-4 flex gap-2 pt-4">
-                  <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onDuzenle(v)}>
-                    <Ikon ad="kalem" boyut={14} />
-                    Düzenle
-                  </button>
-                  <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => onSil(v)}>
-                    <Ikon ad="cop" boyut={14} />
-                    Sil
-                  </button>
-                </div>
+                {onDuzenle && onSil && (
+                  <div className="kenar-ust mt-4 flex gap-2 pt-4">
+                    <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onDuzenle(v)}>
+                      <Ikon ad="kalem" boyut={14} />
+                      Düzenle
+                    </button>
+                    <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => onSil(v)}>
+                      <Ikon ad="cop" boyut={14} />
+                      Sil
+                    </button>
+                  </div>
+                )}
               </article>
             );
           })}

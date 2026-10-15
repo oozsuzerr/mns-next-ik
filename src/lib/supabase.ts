@@ -14,3 +14,13 @@ const supabaseAnonKey = temizle(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 const supabaseUrl = hamUrl ? new URL(hamUrl).origin : "";
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+/**
+ * Oturumu kaydetmeyen ayrı bir istemci. Yönetici, panelden yeni bir panel kullanıcısı
+ * hesabı açarken (signUp) kendi oturumu kapanmasın diye kullanılır.
+ */
+export function geciciIstemci() {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: "mns-gecici" },
+  });
+}
