@@ -80,6 +80,13 @@ export function sureYaz(dk: number): string {
   return `${dk} dk`;
 }
 
+/** Dakikayı saat:dakika yazar: 138 -> "2:18", 0 -> "0:00", -45 -> "-0:45", 3000 -> "50:00" */
+export function saatDakika(dk: number): string {
+  const mutlak = Math.round(Math.abs(dk));
+  const metin = `${Math.floor(mutlak / 60)}:${String(mutlak % 60).padStart(2, "0")}`;
+  return dk < 0 && mutlak > 0 ? `-${metin}` : metin;
+}
+
 // ---------------------------------------------------------------------
 // Arayüz için ek yardımcılar
 // ---------------------------------------------------------------------

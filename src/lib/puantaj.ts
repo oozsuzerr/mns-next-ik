@@ -1,4 +1,4 @@
-import { ayGunSayisi, GUN_ADLARI, gunStr, haftaGunu, planAni, sureYaz, yerelSaat, yerelTarih } from "./tarih";
+import { ayGunSayisi, GUN_ADLARI, gunStr, haftaGunu, planAni, saatDakika, yerelSaat, yerelTarih } from "./tarih";
 import { MAKS_VARDIYA_MS, mesaiSonSiniri } from "./mesai";
 import { gunPlani, planHaritasi, vardiyaAni, vardiyaCozucu, type PlanSatiri } from "./vardiyaPlani";
 import { ayarlariTamamla, DK_MS, type Ayarlar } from "./ayarlar";
@@ -380,7 +380,7 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
         gunAdi: GUN_ADLARI[hg],
         giris: girisStr,
         cikis: cikisStr,
-        netCalisma: netDk > 0 ? sureYaz(netDk) : "-",
+        netCalisma: netDk > 0 ? saatDakika(netDk) : "-",
         durum,
         not: not.trim(),
         tip,

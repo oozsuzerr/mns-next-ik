@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { PuantajSatiri } from "../../lib/puantaj";
-import { sureYaz } from "../../lib/tarih";
+import { saatDakika } from "../../lib/tarih";
 import { Avatar, Bos, Ikon, Iskelet, Rozet, type RozetTon } from "../ui";
 
 function Deger({ sayi, ton, birim = "gün" }: { sayi: number; ton: RozetTon; birim?: string }) {
@@ -107,8 +107,8 @@ export default function PuantajSekmesi({
 
       <div className="ozet-seridi">
         <div>
-          <p className="m2 text-xs font-semibold">Toplam net süre</p>
-          <p className="baslik-font sayi m1 mt-0.5 text-xl">{sureYaz(toplam.net)}</p>
+          <p className="m2 text-xs font-semibold">Toplam net süre (sa:dk)</p>
+          <p className="baslik-font sayi m1 mt-0.5 text-xl">{saatDakika(toplam.net)}</p>
         </div>
         <div>
           <p className="m2 text-xs font-semibold">Devamsız gün</p>
@@ -123,8 +123,8 @@ export default function PuantajSekmesi({
           </p>
         </div>
         <div>
-          <p className="m2 text-xs font-semibold">Plan dışı mesai</p>
-          <p className="baslik-font sayi m1 mt-0.5 text-xl">{sureYaz(toplam.mesai)}</p>
+          <p className="m2 text-xs font-semibold">Plan dışı mesai (sa:dk)</p>
+          <p className="baslik-font sayi m1 mt-0.5 text-xl">{saatDakika(toplam.mesai)}</p>
         </div>
       </div>
 
@@ -158,9 +158,9 @@ export default function PuantajSekmesi({
                     <th className="sag">Rapor / izin</th>
                     <th className="sag">Devamsız</th>
                     <th className="sag">Eksik</th>
-                    <th className="sag">Net süre</th>
-                    <th className="sag">Mesai</th>
-                    <th className="sag">Gecikme</th>
+                    <th className="sag">Net süre (sa:dk)</th>
+                    <th className="sag">Mesai (sa:dk)</th>
+                    <th className="sag">Gecikme (sa:dk)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -192,9 +192,9 @@ export default function PuantajSekmesi({
                       <td className="sag">
                         <Deger sayi={p.eksikGunler} ton="uyari" />
                       </td>
-                      <td className="sag sayi m1 font-semibold">{sureYaz(p.toplamCalismaDk)}</td>
-                      <td className="sag sayi m2">{p.planDisiMesaiDk > 0 ? `+${sureYaz(p.planDisiMesaiDk)}` : "-"}</td>
-                      <td className="sag sayi m2">{p.gecikmeDk > 0 ? `${p.gecikmeDk} dk` : "-"}</td>
+                      <td className="sag sayi m1 font-semibold">{saatDakika(p.toplamCalismaDk)}</td>
+                      <td className="sag sayi m2">{p.planDisiMesaiDk > 0 ? `+${saatDakika(p.planDisiMesaiDk)}` : "-"}</td>
+                      <td className="sag sayi m2">{p.gecikmeDk > 0 ? saatDakika(p.gecikmeDk) : "-"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -223,7 +223,7 @@ export default function PuantajSekmesi({
                       {p.raporluGunler + p.izinliGunler > 0 && (
                         <Rozet ton="izin">{p.raporluGunler + p.izinliGunler} gün rapor/izin</Rozet>
                       )}
-                      <span className="m2 sayi ml-auto text-xs font-semibold">{sureYaz(p.toplamCalismaDk)}</span>
+                      <span className="m2 sayi ml-auto text-xs font-semibold">{saatDakika(p.toplamCalismaDk)}</span>
                     </div>
                   </button>
                 </li>

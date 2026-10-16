@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { saatDakika } from "./tarih";
 
 export type Satir = Record<string, string | number | null | undefined>;
 export type Bicim = "xlsx" | "csv" | "json" | "pdf";
@@ -33,12 +34,17 @@ function blobIndir(icerik: BlobPart, dosyaAdi: string, tip: string) {
   URL.revokeObjectURL(url);
 }
 
-/** Başarılıysa null, sorun varsa kullanıcıya gösterilecek mesajı döndürür. */
+/**
+ * Başarılıysa null, sorun varsa kullanıcıya gösterilecek mesajı döndürür.
+ * sureSutunlari: değeri dakika (sayı) olan sütunlar. Excel'de toplanabilir süre ([h]:mm),
+ * CSV/JSON/PDF'te "2:18" metni olarak yazılır.
+ */
 export function disariAktar(
   format: Bicim,
   baslik: string,
   dosyaAdi: string,
-  veriler: Satir[]
+  veriler: Satir[],
+  sureSutunlari: string[] = []
 ): string | null {
   if (veriler.length === 0) return "Bu sekmede dışa aktarılacak veri bulunamadı.";
 
@@ -46,10 +52,32 @@ export function disariAktar(
 
   if (format === "xlsx") {
     const sayfa = XLSX.utils.json_to_sheet(veriler);
+    for (const sutun of sureSutunlari) {
+      const c = basliklar.indexOf(sutun);
+      if (c < 0) continue;
+      for (let r = 1; r <= veriler.length; r++) {
+        const hucre = sayfa[XLSX.utils.encode_cell({ r, c })];
+        if (!hucre || typeof hucre.v !== "number") continue;
+        // Excel negatif süreyi gösteremez; o durumda metin yazılır
+        if (hucre.v < 0) Object.assign(hucre, { t: "s", v: saatDakika(hucre.v) });
+        else Object.assign(hucre, { v: hucre.v / 1440, z: "[h]:mm" });
+      }
+    }
     const kitap = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(kitap, sayfa, baslik.replace(/[\\/?*[\]:]/g, " ").slice(0, 31));
     XLSX.writeFile(kitap, `${dosyaAdi}.xlsx`);
     return null;
+  }
+
+  if (sureSutunlari.length > 0) {
+    veriler = veriler.map((s) => {
+      const yeni = { ...s };
+      for (const sutun of sureSutunlari) {
+        const deger = yeni[sutun];
+        if (typeof deger === "number") yeni[sutun] = saatDakika(deger);
+      }
+      return yeni;
+    });
   }
 
   if (format === "csv") {

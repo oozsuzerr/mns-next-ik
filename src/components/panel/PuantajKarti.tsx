@@ -1,7 +1,7 @@
 "use client";
 
 import type { GunDetay, PuantajSatiri } from "../../lib/puantaj";
-import { ayAdi, sureYaz } from "../../lib/tarih";
+import { ayAdi, saatDakika } from "../../lib/tarih";
 import { Modal, Rozet, type RozetTon } from "../ui";
 
 const TON: Record<GunDetay["tip"], RozetTon> = {
@@ -39,8 +39,8 @@ export default function PuantajKarti({
           <p className="baslik-font sayi m1 mt-0.5 text-xl">{satir.raporluGunler + satir.izinliGunler}</p>
         </div>
         <div>
-          <p className="m2 text-xs font-semibold">Toplam net süre</p>
-          <p className="baslik-font sayi m1 mt-0.5 text-xl">{sureYaz(satir.toplamCalismaDk)}</p>
+          <p className="m2 text-xs font-semibold">Toplam net süre (sa:dk)</p>
+          <p className="baslik-font sayi m1 mt-0.5 text-xl">{saatDakika(satir.toplamCalismaDk)}</p>
         </div>
         <div>
           <p className="m2 text-xs font-semibold">Devamsız / eksik</p>
@@ -52,10 +52,10 @@ export default function PuantajKarti({
 
       {(satir.planDisiMesaiDk > 0 || satir.resmiTatilMesaiDk > 0 || satir.haftaTatiliMesaiDk > 0 || satir.gecikmeDk > 0) && (
         <div className="mb-4 flex flex-wrap gap-2">
-          {satir.planDisiMesaiDk > 0 && <Rozet ton="izin">Plan dışı mesai {sureYaz(satir.planDisiMesaiDk)}</Rozet>}
-          {satir.resmiTatilMesaiDk > 0 && <Rozet ton="notr">Resmi tatil mesaisi {sureYaz(satir.resmiTatilMesaiDk)}</Rozet>}
-          {satir.haftaTatiliMesaiDk > 0 && <Rozet ton="notr">Hafta tatili mesaisi {sureYaz(satir.haftaTatiliMesaiDk)}</Rozet>}
-          {satir.gecikmeDk > 0 && <Rozet ton="uyari">Toplam gecikme {satir.gecikmeDk} dk</Rozet>}
+          {satir.planDisiMesaiDk > 0 && <Rozet ton="izin">Plan dışı mesai {saatDakika(satir.planDisiMesaiDk)}</Rozet>}
+          {satir.resmiTatilMesaiDk > 0 && <Rozet ton="notr">Resmi tatil mesaisi {saatDakika(satir.resmiTatilMesaiDk)}</Rozet>}
+          {satir.haftaTatiliMesaiDk > 0 && <Rozet ton="notr">Hafta tatili mesaisi {saatDakika(satir.haftaTatiliMesaiDk)}</Rozet>}
+          {satir.gecikmeDk > 0 && <Rozet ton="uyari">Toplam gecikme {saatDakika(satir.gecikmeDk)}</Rozet>}
         </div>
       )}
 

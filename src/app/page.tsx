@@ -24,7 +24,7 @@ import {
   type YoneticiBilgisi,
 } from "../lib/tipler";
 import { ayarlariTamamla, DK_MS, VARSAYILAN_AYARLAR, type Ayarlar } from "../lib/ayarlar";
-import { ayAdi, ayAraligi, kisaTarih, sureYaz, yerelSaat, yerelTarih } from "../lib/tarih";
+import { ayAdi, ayAraligi, kisaTarih, yerelSaat, yerelTarih } from "../lib/tarih";
 import { cikisiEksikGirisler, suankiGiris } from "../lib/mesai";
 import { gunEkle, gunPlani, planHaritasi, vardiyaCozucu, type PlanSatiri } from "../lib/vardiyaPlani";
 import { AcilirMenu, Bos, Ikon, Marka, useBildirim, type IkonAdi } from "../components/ui";
@@ -403,6 +403,15 @@ type FormDurumu =
 
 /** Çıkışı eksik girişler bu kadar gün geriye kadar aranır */
 const CIKIS_EKSIK_GUN = 31;
+
+/** Puantaj raporunda dakika tutulup saat:dakika yazılan sütunlar */
+const PUANTAJ_SURE = [
+  "Toplam Net Çalışma (sa:dk)",
+  "Plan Dışı Mesai (sa:dk)",
+  "Resmi Tatil Mesaisi (sa:dk)",
+  "Hafta Tatili Mesaisi (sa:dk)",
+  "Gecikme (sa:dk)",
+] as const;
 
 // Panelin seçili aya ait tüm verilerini çeker; hata olursa fırlatır
 async function paneliGetir(seciliAy: string) {
@@ -796,7 +805,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   // -------------------------------------------------------------------
   // Dışa aktarma
   // -------------------------------------------------------------------
-  function aktifSekmeVerisi(): { baslik: string; dosyaAdi: string; veriler: Satir[] } {
+  function aktifSekmeVerisi(): { baslik: string; dosyaAdi: string; veriler: Satir[]; sureSutunlari?: string[] } {
     const ek = `MNS_Next_IK_${bugunTarih}`;
 
     if (aktifSekme === "genel") {
@@ -910,19 +919,19 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         "Devamsız Gün": p.devamsizGunler,
         "Resmi Tatil Çalışma Günü": p.resmiTatilCalismalari,
         "Hafta Tatili Çalışma Günü": p.haftaTatiliCalismalari,
-        "Toplam Net Çalışma (dk)": p.toplamCalismaDk,
-        "Toplam Net Çalışma": sureYaz(p.toplamCalismaDk),
-        "Plan Dışı Mesai (dk)": p.planDisiMesaiDk,
-        "Resmi Tatil Mesaisi (dk)": p.resmiTatilMesaiDk,
-        "Hafta Tatili Mesaisi (dk)": p.haftaTatiliMesaiDk,
-        "Gecikme (dk)": p.gecikmeDk,
+        [PUANTAJ_SURE[0]]: p.toplamCalismaDk,
+        [PUANTAJ_SURE[1]]: p.planDisiMesaiDk,
+        [PUANTAJ_SURE[2]]: p.resmiTatilMesaiDk,
+        [PUANTAJ_SURE[3]]: p.haftaTatiliMesaiDk,
+        [PUANTAJ_SURE[4]]: p.gecikmeDk,
       })),
+      sureSutunlari: [...PUANTAJ_SURE],
     };
   }
 
   function raporIndir(format: Bicim) {
-    const { baslik, dosyaAdi, veriler } = aktifSekmeVerisi();
-    const sorun = disariAktar(format, baslik, dosyaAdi, veriler);
+    const { baslik, dosyaAdi, veriler, sureSutunlari } = aktifSekmeVerisi();
+    const sorun = disariAktar(format, baslik, dosyaAdi, veriler, sureSutunlari);
     if (sorun) bildir(sorun, "hata");
     else bildir("Rapor hazırlandı.", "basari");
   }
