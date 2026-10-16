@@ -27,7 +27,7 @@ import { ayarlariTamamla, DK_MS, VARSAYILAN_AYARLAR, type Ayarlar } from "../lib
 import { ayAdi, ayAraligi, kisaTarih, yerelSaat, yerelTarih } from "../lib/tarih";
 import { cikisiEksikGirisler, suankiGiris } from "../lib/mesai";
 import { gunEkle, gunPlani, planHaritasi, vardiyaCozucu, type PlanSatiri } from "../lib/vardiyaPlani";
-import { AcilirMenu, Ikon, Marka, useBildirim, type IkonAdi } from "../components/ui";
+import { AcilirMenu, Ikon, Marka, Modal, useBildirim, type IkonAdi } from "../components/ui";
 import BugunSerit, { type BugunOzet } from "../components/panel/BugunSerit";
 import { AyOzeti, Karsilama, SonHareketler, Yapilacaklar, type YapilacakMadde } from "../components/panel/GenelBakis";
 import PuantajSekmesi from "../components/panel/PuantajSekmesi";
@@ -67,7 +67,12 @@ const SEKMELER: { id: Sekme; etiket: string; kisa: string; ikon: IkonAdi }[] = [
   { id: "genel", etiket: "Hareketler", kisa: "Hareket", ikon: "hareket" },
   { id: "personel", etiket: "Personel", kisa: "Personel", ikon: "personel" },
   { id: "vardiya", etiket: "Vardiyalar", kisa: "Vardiya", ikon: "vardiya" },
+  // Yalnızca genel yönetici görür (bkz. gorunenSekmeler)
+  { id: "subeler", etiket: "Şubeler", kisa: "Şube", ikon: "konum" },
 ];
+
+/** Telefonda alt çubukta doğrudan duran sekmeler; diğerleri "Diğer" penceresinde */
+const ALT_CUBUK: Sekme[] = ["bakis", "puantaj", "talepler", "mesai"];
 
 // =====================================================================
 // 1) GİRİŞ KAPISI (Supabase Auth)
@@ -450,7 +455,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar">("plan");
   const [talepGorunum, setTalepGorunum] = useState<"izin" | "cihaz">("izin");
-  const [personelGorunum, setPersonelGorunum] = useState<"personel" | "subeler" | "kullanicilar" | "gecmis">("personel");
+  const [digerAcik, setDigerAcik] = useState(false);
+  const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
 
   // -------------------------------------------------------------------
   // Veri çekme
@@ -686,10 +692,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       metin: "kurulum adımı eksik: şube ve konumu tanımlanmadı, personel giriş/çıkış yapamaz",
       etiket: "Şube ekle",
       ton: "hata",
-      eylem: () => {
-        setPersonelGorunum("subeler");
-        setAktifSekme("personel");
-      },
+      eylem: () => setAktifSekme("subeler"),
     },
     {
       sayi: cikisEksikler.length,
@@ -846,6 +849,21 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           Başlangıç: v.baslangic_saat.slice(0, 5),
           Bitiş: v.bitis_saat.slice(0, 5),
           "Mola (dk)": v.mola_dakika,
+        })),
+      };
+    }
+
+    if (aktifSekme === "subeler") {
+      return {
+        baslik: "Şube Listesi",
+        dosyaAdi: `${ek}_Subeler`,
+        veriler: subeler.map((s, i) => ({
+          Sıra: i + 1,
+          Şube: s.ad,
+          Enlem: Number(s.enlem),
+          Boylam: Number(s.boylam),
+          "Sınır (m)": s.limit_metre,
+          "Aktif Personel": personeller.filter((p) => p.aktif && p.varsayilan_sube_id === s.id).length,
         })),
       };
     }
@@ -1056,6 +1074,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
   }
 
+  const gorunenSekmeler = SEKMELER.filter((s) => s.id !== "subeler" || genel);
+  const altAna = gorunenSekmeler.filter((s) => ALT_CUBUK.includes(s.id));
+  const altDiger = gorunenSekmeler.filter((s) => !ALT_CUBUK.includes(s.id));
+  const digerSayac = altDiger.reduce((t, s) => t + (sekmeSayaci[s.id] ?? 0), 0);
   const aktifBaslik = SEKMELER.find((s) => s.id === aktifSekme)?.etiket ?? "";
 
   // -------------------------------------------------------------------
@@ -1076,7 +1098,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         </div>
 
         <nav className="flex flex-col gap-1" aria-label="Ana menü">
-          {SEKMELER.map((s) => (
+          {gorunenSekmeler.map((s) => (
             <button
               key={s.id}
               type="button"
@@ -1407,7 +1429,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         {aktifSekme === "personel" && (
           <div className="space-y-4">
             {genel && (
-              <div className="segment segment-4" style={{ maxWidth: 600 }} role="tablist" aria-label="Personel bölümü">
+              <div className="segment segment-3" style={{ maxWidth: 460 }} role="tablist" aria-label="Personel bölümü">
                 <button
                   type="button"
                   role="tab"
@@ -1416,15 +1438,6 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                   onClick={() => setPersonelGorunum("personel")}
                 >
                   Personel
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={personelGorunum === "subeler"}
-                  data-aktif={personelGorunum === "subeler"}
-                  onClick={() => setPersonelGorunum("subeler")}
-                >
-                  Şubeler
                 </button>
                 <button
                   type="button"
@@ -1446,9 +1459,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 </button>
               </div>
             )}
-            {genel && personelGorunum === "subeler" ? (
-              <SubelerSekmesi subeler={subeler} personeller={personeller} duzenlenebilir={genel} onKayit={yenile} />
-            ) : genel && personelGorunum === "kullanicilar" ? (
+            {genel && personelGorunum === "kullanicilar" ? (
               <PanelKullanicilari subeler={subeler} />
             ) : genel && personelGorunum === "gecmis" ? (
               <IslemGecmisi personeller={personeller} />
@@ -1464,6 +1475,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               />
             )}
           </div>
+        )}
+
+        {aktifSekme === "subeler" && genel && (
+          <SubelerSekmesi subeler={subeler} personeller={personeller} duzenlenebilir={genel} onKayit={yenile} />
         )}
 
         {aktifSekme === "vardiya" && (
@@ -1521,7 +1536,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
       {/* Alt sekme çubuğu (telefon) */}
       <nav className="alt-cubuk fixed inset-x-0 bottom-0 z-30 flex lg:hidden" aria-label="Ana menü">
-        {SEKMELER.map((s) => (
+        {altAna.map((s) => (
           <button
             key={s.id}
             type="button"
@@ -1535,7 +1550,57 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             {(sekmeSayaci[s.id] ?? 0) > 0 && <span className="alt-sayac">{sekmeSayaci[s.id]}</span>}
           </button>
         ))}
+        <button
+          type="button"
+          className="alt-sekme"
+          data-aktif={altDiger.some((s) => s.id === aktifSekme)}
+          onClick={() => setDigerAcik(true)}
+          aria-label="Diğer bölümler"
+          aria-haspopup="dialog"
+        >
+          <Ikon ad="daha" boyut={21} />
+          {altDiger.find((s) => s.id === aktifSekme)?.kisa ?? "Diğer"}
+          {digerSayac > 0 && <span className="alt-sayac">{digerSayac}</span>}
+        </button>
       </nav>
+
+      {/* Telefonda "Diğer": alt çubuğa sığmayan sekmeler ve yan menüdeki bağlantılar */}
+      {digerAcik && (
+        <Modal onKapat={() => setDigerAcik(false)} baslik="Diğer bölümler">
+          <div className="grid grid-cols-2 gap-3">
+            {altDiger.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                className="hizli-kutu"
+                data-aktif={aktifSekme === s.id}
+                onClick={() => {
+                  setAktifSekme(s.id);
+                  setDigerAcik(false);
+                }}
+              >
+                <span className="flex items-center justify-between">
+                  <Ikon ad={s.ikon} boyut={20} />
+                  {(sekmeSayaci[s.id] ?? 0) > 0 && <span className="baslik-font sayi text-xl">{sekmeSayaci[s.id]}</span>}
+                </span>
+                <span className="text-sm font-semibold">{s.etiket}</span>
+              </button>
+            ))}
+          </div>
+          <div className="kenar-ust mt-4 space-y-2 pt-4">
+            {yetki.sistem && (
+              <a href="/sistem" className="btn btn-ikincil w-full">
+                <Ikon ad="bina" boyut={16} />
+                Firmalar
+              </a>
+            )}
+            <a href="/mobil" target="_blank" rel="noopener noreferrer" className="btn btn-ikincil w-full">
+              <Ikon ad="telefon" boyut={16} />
+              Mobil ekranı aç
+            </a>
+          </div>
+        </Modal>
+      )}
 
       {/* Pencereler */}
       {seciliSatir && <PuantajKarti satir={seciliSatir} seciliAy={seciliAy} onKapat={() => setSeciliPersonelId(null)} />}

@@ -1136,9 +1136,6 @@ textarea {
 .segment.segment-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-.segment.segment-4 {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-}
 
 /* ---------- Telefonda hızlı işlem kutuları ---------- */
 .hizli-kutu {
@@ -1158,6 +1155,10 @@ textarea {
 }
 .hizli-kutu:active {
   transform: scale(0.98);
+}
+.hizli-kutu[data-aktif="true"] {
+  border-color: var(--mark);
+  color: var(--mark);
 }
 .hizli-kutu[data-acil="true"] {
   border-color: var(--hata);

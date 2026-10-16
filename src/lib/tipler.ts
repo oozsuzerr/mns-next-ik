@@ -139,7 +139,7 @@ export const YETKILER = [
 
 export type Yetki = (typeof YETKILER)[number]["anahtar"];
 
-export type Sekme = "bakis" | "puantaj" | "talepler" | "mesai" | "genel" | "personel" | "vardiya";
+export type Sekme = "bakis" | "puantaj" | "talepler" | "mesai" | "genel" | "personel" | "vardiya" | "subeler";
 
 export const PERSONEL_KOLONLARI =
   "id, sicil_no, tc_kimlik, ad, soyad, departman, varsayilan_sube_id, varsayilan_vardiya_id, rol, cihaz_id, aktif, created_at, pin_tanimli, ise_giris_tarihi, dogum_tarihi, devreden_izin_gun, devir_tarihi, subeler:varsayilan_sube_id (ad), vardiyalar:varsayilan_vardiya_id (*)";
