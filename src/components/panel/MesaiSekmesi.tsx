@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { MesaiTalebi, Personel } from "../../lib/tipler";
-import { GUN_ADLARI, ayAdi, haftaGunu, kisaTarih, sureYaz, yerelSaat, yerelTarih } from "../../lib/tarih";
+import { GUN_ADLARI, ayAdi, haftaGunu, kisaTarih, saatDakika, yerelSaat, yerelTarih } from "../../lib/tarih";
 import { Avatar, Bos, Ikon, Rozet } from "../ui";
 
 /** Paneldeki giriş/çıkış kayıtlarından ilgili günü göstermek için gereken alanlar */
@@ -46,7 +46,7 @@ function TalepKarti({
             {ad} {soyad} <span className="m3 text-xs font-normal">{t.personeller?.sicil_no}</span>
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <Rozet ton="cikis">{sureYaz(t.sure_dk)}</Rozet>
+            <Rozet ton="cikis">{saatDakika(t.sure_dk)}</Rozet>
             <span className="m2 sayi text-sm">
               {gunEtiketi(t.tarih)}, {saatAraligi(t)}
             </span>
@@ -180,8 +180,8 @@ export default function MesaiSekmesi({
         </div>
         <div className="ozet-seridi mb-3">
           <div>
-            <p className="m2 text-xs font-semibold">{ayAdi(seciliAy)} toplamı</p>
-            <p className="baslik-font sayi m1 mt-0.5 text-xl">{sureYaz(genelToplam)}</p>
+            <p className="m2 text-xs font-semibold">{ayAdi(seciliAy)} toplamı (sa:dk)</p>
+            <p className="baslik-font sayi m1 mt-0.5 text-xl">{saatDakika(genelToplam)}</p>
           </div>
           <div>
             <p className="m2 text-xs font-semibold">Mesai yapan kişi</p>
@@ -203,14 +203,14 @@ export default function MesaiSekmesi({
                           {k.sicil}, {k.gun} gün
                         </span>
                       </span>
-                      <span className="baslik-font sayi m1 text-lg">{sureYaz(k.toplamDk)}</span>
+                      <span className="baslik-font sayi m1 text-lg">{saatDakika(k.toplamDk)}</span>
                     </summary>
                     <ul className="m2 space-y-1.5 px-4 pb-3 text-sm sm:px-5">
                       {k.liste.map((t) => (
                         <li key={t.id} className="flex flex-wrap items-baseline gap-x-2">
                           <span className="sayi m1 font-semibold">{gunEtiketi(t.tarih)}</span>
                           <span className="sayi">{saatAraligi(t)}</span>
-                          <span className="sayi m1">{sureYaz(t.sure_dk)}</span>
+                          <span className="sayi m1">{saatDakika(t.sure_dk)}</span>
                           {t.durum === "BEKLEMEDE" && <Rozet ton="uyari">Bekliyor</Rozet>}
                           <span className="m3 w-full text-xs">{t.neden}</span>
                         </li>
@@ -269,7 +269,7 @@ export default function MesaiSekmesi({
                         <Rozet ton={red ? "hata" : "giris"}>{red ? "Reddedildi" : "Onaylandı"}</Rozet>
                       </div>
                       <p className="m2 sayi mt-0.5 text-sm">
-                        {gunEtiketi(t.tarih)}, {saatAraligi(t)} · <span className="m1 font-semibold">{sureYaz(t.sure_dk)}</span>
+                        {gunEtiketi(t.tarih)}, {saatAraligi(t)} · <span className="m1 font-semibold">{saatDakika(t.sure_dk)}</span>
                       </p>
                       <p className="m2 mt-1 text-sm">
                         <span className="m3">Neden: </span>

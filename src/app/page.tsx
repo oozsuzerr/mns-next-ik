@@ -412,6 +412,7 @@ const PUANTAJ_SURE = [
   "Hafta Tatili Mesaisi (sa:dk)",
   "Gecikme (sa:dk)",
 ] as const;
+const MESAI_SURE = "Süre (sa:dk)";
 
 // Panelin seçili aya ait tüm verilerini çeker; hata olursa fırlatır
 async function paneliGetir(seciliAy: string) {
@@ -842,13 +843,13 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             Tarih: t.tarih,
             Başlangıç: t.baslangic_saat.slice(0, 5),
             Bitiş: t.bitis_saat.slice(0, 5),
-            "Süre (dk)": t.sure_dk,
-            "Süre (saat)": Math.round((t.sure_dk / 60) * 100) / 100,
+            [MESAI_SURE]: t.sure_dk,
             Neden: t.neden,
             Durum: t.durum,
             "Amir Açıklaması": t.karar_notu || "-",
             "Karar Zamanı": t.karar_zamani ? `${yerelTarih(t.karar_zamani)} ${yerelSaat(t.karar_zamani)}` : "-",
           })),
+        sureSutunlari: [MESAI_SURE],
       };
     }
     if (aktifSekme === "talepler") {
