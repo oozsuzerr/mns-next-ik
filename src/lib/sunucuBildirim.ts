@@ -77,11 +77,18 @@ export async function bildirimGonder(
 }
 
 /**
- * Bir şubeden sorumlu panel kullanıcıları: tüm genel yöneticiler ve o şubeye atanmış,
- * istenen yetkiye sahip şube müdürleri.
+ * Bir şubeden sorumlu panel kullanıcıları: O FİRMANIN genel yöneticileri ve o şubeye atanmış,
+ * istenen yetkiye sahip şube müdürleri. Firma bilinmiyorsa kimseye gönderilmez
+ * (service_role veritabanı kurallarını atladığı için firma burada açıkça süzülür).
  */
-export async function sorumlular(servis: SupabaseClient, subeId: string | null, yetki: string): Promise<string[]> {
-  const { data: yoneticiler, error } = await servis.from("yoneticiler").select("user_id, rol, yetkiler");
+export async function sorumlular(
+  servis: SupabaseClient,
+  kapsam: { firmaId: string | null | undefined; subeId: string | null | undefined },
+  yetki: string
+): Promise<string[]> {
+  const { firmaId, subeId } = kapsam;
+  if (!firmaId) return [];
+  const { data: yoneticiler, error } = await servis.from("yoneticiler").select("user_id, rol, yetkiler").eq("firma_id", firmaId);
   if (error) throw error;
   const { data: atamalar } = subeId
     ? await servis.from("yonetici_subeleri").select("user_id").eq("sube_id", subeId)

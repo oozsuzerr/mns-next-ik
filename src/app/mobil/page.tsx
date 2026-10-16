@@ -84,6 +84,9 @@ interface Hareket {
 
 const TOKEN_ANAHTAR = "mns_token";
 const IPUCU_ANAHTAR = "mns_ipucu_kapali";
+// Firmaya özel giriş bağlantısındaki kod (/mobil?f=kod); telefonda hatırlanır
+const FIRMA_ANAHTAR = "mns_firma";
+const FIRMA_KODU = /^[a-z0-9-]{3,20}$/;
 
 /** "14 Eki Salı" */
 function gunMetni(iso: string): string {
@@ -112,6 +115,8 @@ interface CihazTalebi {
 
 function hataMetni(kod: string | undefined, veri?: Record<string, unknown>): string {
   switch (kod) {
+    case "FIRMA_YOK":
+      return "Firma bulunamadı. Yöneticinizden aldığınız giriş bağlantısını kullanın.";
     case "GIRIS_HATALI":
       return "T.C. kimlik numarası veya PIN hatalı.";
     case "HESAP_KILITLI":
@@ -218,6 +223,8 @@ function MobilGirisEkrani() {
   const [simdi, setSimdi] = useState<Date | null>(null);
 
   const [tcGiris, setTcGiris] = useState("");
+  const [firmaKod, setFirmaKod] = useState<string | null>(null);
+  const [firmaAd, setFirmaAd] = useState<string | null>(null);
   const [pinGiris, setPinGiris] = useState("");
   const [pinGoster, setPinGoster] = useState(false);
   const [girisHata, setGirisHata] = useState<string | null>(null);
@@ -295,6 +302,11 @@ function MobilGirisEkrani() {
         return false;
       }
       setPersonel(data.personel);
+      if (data.firma?.kod) {
+        localStorage.setItem(FIRMA_ANAHTAR, data.firma.kod);
+        setFirmaKod(data.firma.kod);
+        setFirmaAd(data.firma.ad ?? null);
+      }
       setSubeler(data.subeler ?? []);
       setGecmis(data.gecmis ?? []);
       setVardiya(data.vardiya ?? null);
@@ -316,6 +328,17 @@ function MobilGirisEkrani() {
     // Tarayıcıya özel değer (localStorage/saat/konum) sayfa hidrasyonundan sonra okunur; render sırasında okunamaz
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIzinTalep((s) => ({ ...s, baslangic_tarihi: bugun, bitis_tarihi: bugun }));
+
+    // Firma: bağlantıdaki ?f= kodu önceliklidir, yoksa telefonda kayıtlı olan
+    const baglantiKodu = new URLSearchParams(window.location.search).get("f")?.trim().toLowerCase() ?? "";
+    const kod = FIRMA_KODU.test(baglantiKodu) ? baglantiKodu : localStorage.getItem(FIRMA_ANAHTAR);
+    if (kod) {
+      localStorage.setItem(FIRMA_ANAHTAR, kod);
+      setFirmaKod(kod);
+      supabase
+        .rpc("firma_adi", { p_kod: kod })
+        .then(({ data }) => setFirmaAd(typeof data === "string" ? data : null), () => {});
+    }
 
     const bagimsiz = anaEkrandaMi();
     setIpucuGoster(!bagimsiz && localStorage.getItem(IPUCU_ANAHTAR) !== "1");
@@ -439,7 +462,9 @@ function MobilGirisEkrani() {
     setYukleniyor(true);
     setGirisHata(null);
     try {
+      // Firma kodu yoksa eski giriş (geçiş döneminde MNS)
       const { data, error } = await supabase.rpc("personel_giris", {
+        ...(firmaKod ? { p_firma_kod: firmaKod } : {}),
         p_tc: tcGiris,
         p_pin: pinGiris,
         p_cihaz: await cihazKimligi(),
@@ -483,6 +508,7 @@ function MobilGirisEkrani() {
     try {
       const cihaz = await cihazKimligi();
       const { data, error } = await supabase.rpc("cihaz_talebi_olustur", {
+        ...(firmaKod ? { p_firma_kod: firmaKod } : {}),
         p_tc: tcGiris,
         p_pin: pinGiris,
         p_cihaz: cihaz,
@@ -657,7 +683,8 @@ function MobilGirisEkrani() {
     return (
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-8 pt-14">
         <Marka boyut={48} />
-        <h1 className="baslik-font m1 mt-8 text-4xl leading-tight">Mesaiye başlamadan önce giriş yapın</h1>
+        {firmaAd && <p className="m2 mt-8 text-sm font-semibold uppercase tracking-wide">{firmaAd}</p>}
+        <h1 className={`baslik-font m1 ${firmaAd ? "mt-2" : "mt-8"} text-4xl leading-tight`}>Mesaiye başlamadan önce giriş yapın</h1>
         <p className="m2 mt-3 text-base">T.C. kimlik numaranız ve İK birimi tarafından verilen PIN ile devam edin.</p>
 
         {cihazKilidi ? (

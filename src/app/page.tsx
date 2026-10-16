@@ -145,10 +145,12 @@ async function yetkiGetir(): Promise<YoneticiBilgisi | false> {
       ad: b.ad ?? null,
       subeler: b.subeler ?? [],
       yetkiler: b.yetkiler ?? (b.rol === "SUBE" ? ["plan", "izin", "manuel", "cihaz"] : []),
+      firma: b.firma ?? null,
+      sistem: b.sistem === true,
     };
   }
   const eski = await supabase.rpc("is_admin");
-  return !eski.error && eski.data === true ? { rol: "GENEL", ad: null, subeler: [], yetkiler: [] } : false;
+  return !eski.error && eski.data === true ? { rol: "GENEL", ad: null, subeler: [], yetkiler: [], firma: null, sistem: false } : false;
 }
 
 function YoneticiGiris() {
@@ -1056,8 +1058,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           <Marka boyut={36} />
           <div>
             <p className="baslik-font text-lg leading-tight">MNS Next IK</p>
-            <p className="text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
-              Personel devam kontrol
+            <p className="truncate text-xs" style={{ color: "rgba(255,255,255,0.55)" }}>
+              {yetki.firma?.ad ?? "Personel devam kontrol"}
             </p>
           </div>
         </div>
@@ -1079,6 +1081,12 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         </nav>
 
         <div className="mt-auto space-y-1 pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+          {yetki.sistem && (
+            <a href="/sistem" className="nav-oge">
+              <Ikon ad="bina" />
+              Firmalar
+            </a>
+          )}
           <a href="/mobil" target="_blank" rel="noopener noreferrer" className="nav-oge">
             <Ikon ad="telefon" />
             Mobil ekranı aç

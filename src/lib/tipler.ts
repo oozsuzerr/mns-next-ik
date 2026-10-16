@@ -119,6 +119,10 @@ export interface YoneticiBilgisi {
   subeler: string[];
   /** Şube müdürünün açık yetkileri (genel yöneticide boş; o her şeye yetkilidir) */
   yetkiler: Yetki[];
+  /** Kullanıcının bağlı olduğu firma (çok firmalı yapıdan önceki veritabanında yok) */
+  firma: { id: string; ad: string; kod: string } | null;
+  /** Firmaları yöneten sistem yöneticisi mi (/sistem sayfası) */
+  sistem: boolean;
 }
 
 /** Şube müdürüne tek tek verilebilen yetkiler (veritabanındaki anahtarlarla aynı) */

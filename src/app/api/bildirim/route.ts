@@ -49,7 +49,7 @@ export async function POST(istek: Request) {
       // Olay gerçekten oldu mu: son 3 dakikada oluşturulmuş bekleyen talep
       const { data: talep } = await servis
         .from("izinler")
-        .select("izin_turu, baslangic_tarihi, bitis_tarihi, baslangic_saat, bitis_saat, personeller (ad, soyad, varsayilan_sube_id)")
+        .select("izin_turu, baslangic_tarihi, bitis_tarihi, baslangic_saat, bitis_saat, personeller (ad, soyad, varsayilan_sube_id, firma_id)")
         .eq("personel_id", pid)
         .eq("durum", "BEKLEMEDE")
         .gte("created_at", new Date(Date.now() - 3 * 60 * 1000).toISOString())
@@ -58,8 +58,8 @@ export async function POST(istek: Request) {
         .maybeSingle();
       if (!talep) return yanit(200, { gonderilen: 0 });
 
-      const p = talep.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null } | null;
-      const alicilar = await sorumlular(servis, p?.varsayilan_sube_id ?? null, "izin");
+      const p = talep.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null; firma_id: string } | null;
+      const alicilar = await sorumlular(servis, { firmaId: p?.firma_id, subeId: p?.varsayilan_sube_id }, "izin");
       const gonderilen = await bildirimGonder(
         servis,
         { kullanicilar: alicilar },
@@ -80,7 +80,7 @@ export async function POST(istek: Request) {
       if (error || !pid) return yanit(401, { hata: "OTURUM_GECERSIZ" });
       const { data: t } = await servis
         .from("mesai_talepleri")
-        .select("tarih, baslangic_saat, bitis_saat, sure_dk, personeller (ad, soyad, varsayilan_sube_id)")
+        .select("tarih, baslangic_saat, bitis_saat, sure_dk, personeller (ad, soyad, varsayilan_sube_id, firma_id)")
         .eq("personel_id", pid)
         .eq("durum", "BEKLEMEDE")
         .gte("created_at", new Date(Date.now() - 3 * 60 * 1000).toISOString())
@@ -88,8 +88,8 @@ export async function POST(istek: Request) {
         .limit(1)
         .maybeSingle();
       if (!t) return yanit(200, { gonderilen: 0 });
-      const p = t.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null } | null;
-      const alicilar = await sorumlular(servis, p?.varsayilan_sube_id ?? null, "mesai");
+      const p = t.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null; firma_id: string } | null;
+      const alicilar = await sorumlular(servis, { firmaId: p?.firma_id, subeId: p?.varsayilan_sube_id }, "mesai");
       const gonderilen = await bildirimGonder(
         servis,
         { kullanicilar: alicilar },
@@ -111,15 +111,15 @@ export async function POST(istek: Request) {
       if (!/^[0-9a-f-]{36}$/i.test(talepId) || !cihaz) return yanit(400, { hata: "GOVDE_GECERSIZ" });
       const { data: t } = await servis
         .from("cihaz_talepleri")
-        .select("cihaz_bilgisi, personeller (ad, soyad, varsayilan_sube_id)")
+        .select("cihaz_bilgisi, personeller (ad, soyad, varsayilan_sube_id, firma_id)")
         .eq("id", talepId)
         .eq("cihaz_id", cihaz)
         .eq("durum", "BEKLEMEDE")
         .gte("created_at", new Date(Date.now() - 3 * 60 * 1000).toISOString())
         .maybeSingle();
       if (!t) return yanit(200, { gonderilen: 0 });
-      const p = t.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null } | null;
-      const alicilar = await sorumlular(servis, p?.varsayilan_sube_id ?? null, "cihaz");
+      const p = t.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null; firma_id: string } | null;
+      const alicilar = await sorumlular(servis, { firmaId: p?.firma_id, subeId: p?.varsayilan_sube_id }, "cihaz");
       const gonderilen = await bildirimGonder(
         servis,
         { kullanicilar: alicilar },

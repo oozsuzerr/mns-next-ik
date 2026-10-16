@@ -21,8 +21,8 @@ export async function GET(istek: Request) {
     const bugun = yerelTarih();
 
     const [per, vard, plan, har, ayar] = await Promise.all([
-      servis.from("personeller").select("id, ad, soyad, varsayilan_sube_id, varsayilan_vardiya_id").eq("aktif", true),
-      servis.from("vardiyalar").select("id, ad, baslangic_saat, bitis_saat, mola_dakika").order("created_at"),
+      servis.from("personeller").select("id, ad, soyad, varsayilan_sube_id, varsayilan_vardiya_id, firma_id").eq("aktif", true),
+      servis.from("vardiyalar").select("id, ad, baslangic_saat, bitis_saat, mola_dakika, firma_id").order("created_at"),
       servis
         .from("vardiya_plani")
         .select("id, personel_id, tarih, tur, vardiya_id, sube_id")
@@ -33,13 +33,16 @@ export async function GET(istek: Request) {
         .select("personel_id, islem_turu, created_at")
         .gte("created_at", new Date(simdi - 3 * GUN_MS).toISOString())
         .order("created_at"),
-      servis.from("sirket_ayarlari").select("*").maybeSingle(),
+      servis.from("sirket_ayarlari").select("*"),
     ]);
     for (const s of [per, vard, plan, har]) if (s.error) throw s.error;
 
-    const ayarlar = ayarlariTamamla(ayar.data);
-    const toleransMs = ayarlar.cikis_tolerans_dk * DK_MS;
-    const vardiyalar = (vard.data ?? []) as PlanVardiya[];
+    // Her firma kendi kurallarıyla ve kendi vardiyalarıyla hesaplanır (service_role tüm firmaları görür)
+    const firmaAyarlari = new Map<string, ReturnType<typeof ayarlariTamamla>>(
+      (ayar.data ?? []).map((a) => [a.firma_id as string, ayarlariTamamla(a)])
+    );
+
+    const vardiyalar = (vard.data ?? []) as (PlanVardiya & { firma_id: string })[];
     const vardiyaBul = (id: string) => vardiyalar.find((v) => v.id === id);
     const harita = planHaritasi((plan.data ?? []) as PlanSatiri[]);
     const kisiHareketleri = new Map<string, { islem_turu: string; created_at: string }[]>();
@@ -50,10 +53,14 @@ export async function GET(istek: Request) {
     }
 
     // Personel başına: son 24 saatte süresi dolan, çıkışı olmayan girişler
-    const subeyeGore = new Map<string | null, number>();
+    // Anahtar: "firma|şube"
+    const subeyeGore = new Map<string, { firmaId: string; subeId: string | null; sayi: number }>();
     let personeleGiden = 0;
     for (const p of per.data ?? []) {
-      const varsayilan = (p.varsayilan_vardiya_id && vardiyaBul(p.varsayilan_vardiya_id)) || vardiyalar[0] || null;
+      const ayarlar = firmaAyarlari.get(p.firma_id) ?? ayarlariTamamla(null);
+      const toleransMs = ayarlar.cikis_tolerans_dk * DK_MS;
+      const varsayilan =
+        (p.varsayilan_vardiya_id && vardiyaBul(p.varsayilan_vardiya_id)) || vardiyalar.find((v) => v.firma_id === p.firma_id) || null;
       const cozucu = vardiyaCozucu(
         (t) => gunPlani(harita.get(`${p.id}|${t}`), t, varsayilan, vardiyaBul),
         ayarlar.erken_giris_payi_dk * DK_MS
@@ -64,7 +71,10 @@ export async function GET(istek: Request) {
       );
       if (yeni.length === 0) continue;
 
-      subeyeGore.set(p.varsayilan_sube_id, (subeyeGore.get(p.varsayilan_sube_id) ?? 0) + 1);
+      const anahtar = `${p.firma_id}|${p.varsayilan_sube_id}`;
+      const kayit = subeyeGore.get(anahtar) ?? { firmaId: p.firma_id, subeId: p.varsayilan_sube_id, sayi: 0 };
+      kayit.sayi++;
+      subeyeGore.set(anahtar, kayit);
       const h = yeni[yeni.length - 1];
       const tarih = yerelTarih(h.created_at);
       personeleGiden += await bildirimGonder(
@@ -81,8 +91,8 @@ export async function GET(istek: Request) {
 
     // Yöneticilere şube bazında özet (genel yönetici tüm şubelerin toplamını alır)
     const yoneticiye = new Map<string, number>();
-    for (const [subeId, sayi] of subeyeGore) {
-      for (const uid of await sorumlular(servis, subeId, "manuel")) yoneticiye.set(uid, (yoneticiye.get(uid) ?? 0) + sayi);
+    for (const { firmaId, subeId, sayi } of subeyeGore.values()) {
+      for (const uid of await sorumlular(servis, { firmaId, subeId }, "manuel")) yoneticiye.set(uid, (yoneticiye.get(uid) ?? 0) + sayi);
     }
     let yoneticiyeGiden = 0;
     for (const [uid, sayi] of yoneticiye) {
@@ -98,7 +108,7 @@ export async function GET(istek: Request) {
       );
     }
 
-    return Response.json({ personel: personeleGiden, yonetici: yoneticiyeGiden, eksik: [...subeyeGore.values()].reduce((a, b) => a + b, 0) });
+    return Response.json({ personel: personeleGiden, yonetici: yoneticiyeGiden, eksik: [...subeyeGore.values()].reduce((a, b) => a + b.sayi, 0) });
   } catch (err) {
     return Response.json({ hata: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
