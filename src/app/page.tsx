@@ -35,6 +35,7 @@ import PuantajKarti from "../components/panel/PuantajKarti";
 import TaleplerSekmesi from "../components/panel/TaleplerSekmesi";
 import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
+import SubelerSekmesi from "../components/panel/SubelerSekmesi";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
 import VardiyaPlani from "../components/panel/VardiyaPlani";
 import PanelKullanicilari from "../components/panel/PanelKullanicilari";
@@ -449,7 +450,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar">("plan");
   const [talepGorunum, setTalepGorunum] = useState<"izin" | "cihaz">("izin");
-  const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
+  const [personelGorunum, setPersonelGorunum] = useState<"personel" | "subeler" | "kullanicilar" | "gecmis">("personel");
 
   // -------------------------------------------------------------------
   // Veri çekme
@@ -680,6 +681,16 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   }, [bugunHareketleri, personeller, seciliSubeFiltre, bugunTarih]);
 
   const yapilacaklar: YapilacakMadde[] = [
+    {
+      sayi: genel && !yukleniyor && subeler.length === 0 ? 1 : 0,
+      metin: "kurulum adımı eksik: şube ve konumu tanımlanmadı, personel giriş/çıkış yapamaz",
+      etiket: "Şube ekle",
+      ton: "hata",
+      eylem: () => {
+        setPersonelGorunum("subeler");
+        setAktifSekme("personel");
+      },
+    },
     {
       sayi: cikisEksikler.length,
       metin: "girişin çıkış kaydı yok (çıkış basılmamış)",
@@ -1396,7 +1407,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         {aktifSekme === "personel" && (
           <div className="space-y-4">
             {genel && (
-              <div className="segment segment-3" style={{ maxWidth: 460 }} role="tablist" aria-label="Personel bölümü">
+              <div className="segment segment-4" style={{ maxWidth: 600 }} role="tablist" aria-label="Personel bölümü">
                 <button
                   type="button"
                   role="tab"
@@ -1405,6 +1416,15 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                   onClick={() => setPersonelGorunum("personel")}
                 >
                   Personel
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={personelGorunum === "subeler"}
+                  data-aktif={personelGorunum === "subeler"}
+                  onClick={() => setPersonelGorunum("subeler")}
+                >
+                  Şubeler
                 </button>
                 <button
                   type="button"
@@ -1426,7 +1446,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 </button>
               </div>
             )}
-            {genel && personelGorunum === "kullanicilar" ? (
+            {genel && personelGorunum === "subeler" ? (
+              <SubelerSekmesi subeler={subeler} personeller={personeller} duzenlenebilir={genel} onKayit={yenile} />
+            ) : genel && personelGorunum === "kullanicilar" ? (
               <PanelKullanicilari subeler={subeler} />
             ) : genel && personelGorunum === "gecmis" ? (
               <IslemGecmisi personeller={personeller} />
