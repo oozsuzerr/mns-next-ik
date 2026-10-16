@@ -27,8 +27,9 @@ import { ayarlariTamamla, DK_MS, VARSAYILAN_AYARLAR, type Ayarlar } from "../lib
 import { ayAdi, ayAraligi, kisaTarih, yerelSaat, yerelTarih } from "../lib/tarih";
 import { cikisiEksikGirisler, suankiGiris } from "../lib/mesai";
 import { gunEkle, gunPlani, planHaritasi, vardiyaCozucu, type PlanSatiri } from "../lib/vardiyaPlani";
-import { AcilirMenu, Bos, Ikon, Marka, useBildirim, type IkonAdi } from "../components/ui";
+import { AcilirMenu, Ikon, Marka, useBildirim, type IkonAdi } from "../components/ui";
 import BugunSerit, { type BugunOzet } from "../components/panel/BugunSerit";
+import { AyOzeti, Karsilama, SonHareketler, Yapilacaklar, type YapilacakMadde } from "../components/panel/GenelBakis";
 import PuantajSekmesi from "../components/panel/PuantajSekmesi";
 import PuantajKarti from "../components/panel/PuantajKarti";
 import TaleplerSekmesi from "../components/panel/TaleplerSekmesi";
@@ -61,6 +62,7 @@ const SEKMELER: { id: Sekme; etiket: string; kisa: string; ikon: IkonAdi }[] = [
   { id: "bakis", etiket: "Genel bakış", kisa: "Bakış", ikon: "bakis" },
   { id: "puantaj", etiket: "Puantaj", kisa: "Puantaj", ikon: "puantaj" },
   { id: "talepler", etiket: "İzin talepleri", kisa: "Talepler", ikon: "talepler" },
+  { id: "mesai", etiket: "Fazla mesai", kisa: "Mesai", ikon: "mesai" },
   { id: "genel", etiket: "Hareketler", kisa: "Hareket", ikon: "hareket" },
   { id: "personel", etiket: "Personel", kisa: "Personel", ikon: "personel" },
   { id: "vardiya", etiket: "Vardiyalar", kisa: "Vardiya", ikon: "vardiya" },
@@ -258,136 +260,7 @@ function YoneticiGiris() {
 }
 
 // =====================================================================
-// 2) GENEL BAKIŞ
-// =====================================================================
-/** Telefonda genel bakışın üstünde: en sık yapılan işlere tek dokunuşla ulaşım */
-function HizliIslemler({
-  cikisEksik,
-  bekleyen,
-  gelmeyen,
-  onCikisEksik,
-  onTalepler,
-  onGelmeyenler,
-  onManuel,
-  onPlan,
-}: {
-  cikisEksik: number;
-  bekleyen: number;
-  gelmeyen: number;
-  onCikisEksik: () => void;
-  onTalepler: () => void;
-  onGelmeyenler: () => void;
-  onManuel?: () => void;
-  onPlan: () => void;
-}) {
-  const kutular: { etiket: string; sayi?: number; ikon: IkonAdi; acil?: boolean; eylem: () => void }[] = [
-    { etiket: "Eksik çıkış", sayi: cikisEksik, ikon: "uyari", acil: cikisEksik > 0, eylem: onCikisEksik },
-    { etiket: "Onay bekleyen", sayi: bekleyen, ikon: "talepler", acil: bekleyen > 0, eylem: onTalepler },
-    { etiket: "Henüz gelmeyen", sayi: gelmeyen, ikon: "personel", eylem: onGelmeyenler },
-    onManuel
-      ? { etiket: "Manuel giriş/çıkış", ikon: "kalem", eylem: onManuel }
-      : { etiket: "Vardiya planı", ikon: "vardiya", eylem: onPlan },
-  ];
-  return (
-    <section className="grid grid-cols-2 gap-3 lg:hidden" aria-label="Hızlı işlemler">
-      {kutular.map((k) => (
-        <button key={k.etiket} type="button" className="hizli-kutu" data-acil={!!k.acil} onClick={k.eylem}>
-          <span className="flex items-center justify-between">
-            <Ikon ad={k.ikon} boyut={20} />
-            {k.sayi !== undefined && <span className="baslik-font sayi text-2xl">{k.sayi}</span>}
-          </span>
-          <span className="text-sm font-semibold">{k.etiket}</span>
-        </button>
-      ))}
-    </section>
-  );
-}
-
-function DikkatListesi({
-  cikisEksik,
-  bekleyen,
-  pinsiz,
-  eksik,
-  devamsiz,
-  donem,
-  onGit,
-  onCikisEksik,
-}: {
-  cikisEksik: number;
-  bekleyen: number;
-  pinsiz: number;
-  eksik: number;
-  devamsiz: number;
-  donem: string;
-  onGit: (s: Sekme) => void;
-  onCikisEksik: () => void;
-}) {
-  const maddeler: { ikon: IkonAdi; metin: string; etiket: string; acil?: boolean; eylem: () => void }[] = [];
-  if (cikisEksik > 0)
-    maddeler.push({
-      ikon: "uyari",
-      metin: `${cikisEksik} girişin çıkış kaydı yok: personel çıkış basmayı unutmuş`,
-      etiket: "Listeyi aç",
-      acil: true,
-      eylem: onCikisEksik,
-    });
-  if (bekleyen > 0)
-    maddeler.push({ ikon: "talepler", metin: `${bekleyen} talep onayınızı bekliyor`, etiket: "İncele", eylem: () => onGit("talepler") });
-  if (pinsiz > 0)
-    maddeler.push({
-      ikon: "anahtar",
-      metin: `${pinsiz} personelin mobil PIN'i yok, giriş yapamaz`,
-      eylem: () => onGit("personel"),
-      etiket: "PIN belirle",
-    });
-  if (eksik > 0)
-    maddeler.push({
-      ikon: "uyari",
-      metin: `${donem} döneminde ${eksik} gün eksik giriş veya çıkış kaydı var`,
-      eylem: () => onGit("puantaj"),
-      etiket: "Puantaja bak",
-    });
-  if (devamsiz > 0)
-    maddeler.push({
-      ikon: "takvim",
-      metin: `${donem} döneminde toplam ${devamsiz} devamsız gün var`,
-      eylem: () => onGit("puantaj"),
-      etiket: "Puantaja bak",
-    });
-
-  return (
-    <section className="panel overflow-hidden">
-      <div className="px-5 pb-2 pt-5">
-        <h3 className="baslik-font m1 text-lg">Dikkat gerektirenler</h3>
-      </div>
-      {maddeler.length === 0 ? (
-        <Bos ikon="tik" baslik="Her şey yolunda" metin="Onay bekleyen talep, eksik kayıt ya da PIN'siz personel yok." />
-      ) : (
-        <ul className="liste">
-          {maddeler.map((m) => (
-            <li key={m.metin} className="flex items-center gap-3 px-5 py-3.5">
-              <span
-                className="bos-ikon flex h-9 w-9 flex-none items-center justify-center rounded-full"
-                style={m.acil ? { background: "var(--hata-acik)", color: "var(--hata)" } : undefined}
-              >
-                <Ikon ad={m.ikon} boyut={17} />
-              </span>
-              <p className="m1 flex-1 text-sm font-medium" style={m.acil ? { color: "var(--hata)" } : undefined}>
-                {m.metin}
-              </p>
-              <button type="button" className={`btn btn-kucuk ${m.acil ? "btn-tehlike" : "btn-ikincil"}`} onClick={m.eylem}>
-                {m.etiket}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-// =====================================================================
-// 3) PANEL
+// 2) PANEL
 // =====================================================================
 type FormDurumu =
   | { tur: "personel" }
@@ -573,7 +446,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [form, setForm] = useState<FormDurumu>(null);
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar">("plan");
-  const [talepGorunum, setTalepGorunum] = useState<"izin" | "mesai" | "cihaz">("izin");
+  const [talepGorunum, setTalepGorunum] = useState<"izin" | "cihaz">("izin");
   const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
 
   // -------------------------------------------------------------------
@@ -674,7 +547,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
   const bekleyenMesai = mesaiTalepleri.filter((t) => t.durum === "BEKLEMEDE").length;
   const bekleyenCihaz = cihazTalepleri.length;
-  const bekleyenSayisi = izinler.filter((iz) => iz.durum === "BEKLEMEDE").length + bekleyenMesai + bekleyenCihaz;
+  const bekleyenIzin = izinler.filter((iz) => iz.durum === "BEKLEMEDE").length;
+  // Sol menüdeki sayaçlar: izin + telefon talepleri bir sekmede, fazla mesai ayrı sekmede
+  const sekmeSayaci: Partial<Record<Sekme, number>> = { talepler: bekleyenIzin + bekleyenCihaz, mesai: bekleyenMesai };
 
   // Son CIKIS_EKSIK_GUN günün hareketleri, kişiye göre (eskiden yeniye)
   const kisiHareketleri = useMemo(() => {
@@ -784,6 +659,84 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const pinsizSayisi = personeller.filter((p) => p.aktif && !p.pin_tanimli).length;
   const eksikToplam = filtrelenmisPuantaj.reduce((t, p) => t + p.eksikGunler, 0);
   const devamsizToplam = filtrelenmisPuantaj.reduce((t, p) => t + p.devamsizGunler, 0);
+  const netToplamDk = filtrelenmisPuantaj.reduce((t, p) => t + p.toplamCalismaDk, 0);
+  const onayliMesaiDk = mesaiTalepleri
+    .filter((t) => t.durum === "ONAYLANDI" && t.tarih.startsWith(seciliAy))
+    .filter((t) => seciliSubeFiltre === "TUMU" || t.personeller?.varsayilan_sube_id === seciliSubeFiltre)
+    .reduce((top, t) => top + t.sure_dk, 0);
+
+  // Genel bakıştaki canlı akış ve kişi saatleri için: bugünün hareketleri (şube filtresine göre, eskiden yeniye)
+  const bugunkuHareketler = useMemo(() => {
+    const kapsam = new Set(
+      personeller
+        .filter((p) => p.aktif && (seciliSubeFiltre === "TUMU" || p.varsayilan_sube_id === seciliSubeFiltre))
+        .map((p) => p.id)
+    );
+    return bugunHareketleri
+      .filter((h) => kapsam.has(h.personel_id) && yerelTarih(h.created_at) === bugunTarih)
+      .sort((x, y) => x.created_at.localeCompare(y.created_at));
+  }, [bugunHareketleri, personeller, seciliSubeFiltre, bugunTarih]);
+
+  const yapilacaklar: YapilacakMadde[] = [
+    {
+      sayi: cikisEksikler.length,
+      metin: "girişin çıkış kaydı yok (çıkış basılmamış)",
+      etiket: "Düzelt",
+      ton: "hata",
+      eylem: () => setForm({ tur: "cikisEksik" }),
+    },
+    {
+      sayi: bekleyenIzin,
+      metin: "izin talebi onay bekliyor",
+      etiket: "İncele",
+      ton: "uyari",
+      eylem: () => {
+        setTalepGorunum("izin");
+        setAktifSekme("talepler");
+      },
+    },
+    {
+      sayi: bekleyenMesai,
+      metin: "fazla mesai talebi onay bekliyor",
+      etiket: "İncele",
+      ton: "uyari",
+      eylem: () => setAktifSekme("mesai"),
+    },
+    {
+      sayi: yetkili("cihaz") ? bekleyenCihaz : 0,
+      metin: "yeni telefon talebi bekliyor",
+      etiket: "İncele",
+      ton: "uyari",
+      eylem: () => {
+        setTalepGorunum("cihaz");
+        setAktifSekme("talepler");
+      },
+    },
+    {
+      sayi: bugunOzet.gec.length,
+      metin: "kişi bugün işe geç geldi",
+      etiket: "Hareketler",
+      eylem: () => setAktifSekme("genel"),
+    },
+    {
+      sayi: yetkili("pin") ? pinsizSayisi : 0,
+      metin: "personelin mobil PIN'i yok, giriş yapamaz",
+      etiket: "PIN belirle",
+      eylem: () => setAktifSekme("personel"),
+    },
+    {
+      sayi: eksikToplam,
+      metin: `gün ${ayAdi(seciliAy)} içinde eksik giriş/çıkış kaydı`,
+      etiket: "Puantaj",
+      eylem: () => setAktifSekme("puantaj"),
+    },
+    {
+      sayi: devamsizToplam,
+      metin: `gün ${ayAdi(seciliAy)} içinde devamsızlık`,
+      etiket: "Puantaj",
+      eylem: () => setAktifSekme("puantaj"),
+    },
+  ];
 
   const ayHareketleri = useMemo(
     () =>
@@ -828,7 +781,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       };
     }
 
-    if (aktifSekme === "talepler" && talepGorunum === "mesai") {
+    if (aktifSekme === "mesai") {
       return {
         baslik: `Fazla Mesai (${seciliAy})`,
         dosyaAdi: `${ek}_FazlaMesai_${seciliAy}`,
@@ -1120,7 +1073,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             >
               <Ikon ad={s.ikon} />
               {s.etiket}
-              {s.id === "talepler" && bekleyenSayisi > 0 && <span className="nav-sayac">{bekleyenSayisi}</span>}
+              {(sekmeSayaci[s.id] ?? 0) > 0 && <span className="nav-sayac">{sekmeSayaci[s.id]}</span>}
             </button>
           ))}
         </nav>
@@ -1292,6 +1245,26 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
         {aktifSekme === "bakis" && (
           <div className="space-y-6">
+            <Karsilama veriZamani={veriZamani} yukleniyor={yukleniyor} onYenile={yukleyerekGetir} />
+            <BugunSerit
+              ozet={bugunOzet}
+              yukleniyor={yukleniyor}
+              hareketler={bugunkuHareketler}
+              onGelmeyenler={() => setForm({ tur: "gelmeyen" })}
+            />
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Yapilacaklar maddeler={yapilacaklar} />
+              <SonHareketler hareketler={bugunkuHareketler} personeller={personeller} onTumu={() => setAktifSekme("genel")} />
+            </div>
+            <AyOzeti
+              donem={ayAdi(seciliAy)}
+              netDk={netToplamDk}
+              mesaiDk={onayliMesaiDk}
+              devamsiz={devamsizToplam}
+              eksik={eksikToplam}
+              onPuantaj={() => setAktifSekme("puantaj")}
+              onMesai={() => setAktifSekme("mesai")}
+            />
             <BildirimDugmesi
               aciklama="Yeni izin talepleri ve eksik çıkışlar için bu cihaza bildirim gelsin."
               kaydet={async (a) => {
@@ -1305,27 +1278,6 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               birak={async (endpoint) => {
                 await supabase.rpc("panel_push_abonelik_birak", { p_endpoint: endpoint });
               }}
-            />
-            <HizliIslemler
-              cikisEksik={cikisEksikler.length}
-              bekleyen={bekleyenSayisi}
-              gelmeyen={bugunOzet.gelmedi.length}
-              onCikisEksik={() => setForm({ tur: "cikisEksik" })}
-              onTalepler={() => setAktifSekme("talepler")}
-              onGelmeyenler={() => setForm({ tur: "gelmeyen" })}
-              onManuel={yetkili("manuel") ? () => setForm({ tur: "manuel" }) : undefined}
-              onPlan={() => setAktifSekme("vardiya")}
-            />
-            <BugunSerit ozet={bugunOzet} yukleniyor={yukleniyor} onGelmeyenler={() => setForm({ tur: "gelmeyen" })} />
-            <DikkatListesi
-              cikisEksik={cikisEksikler.length}
-              onCikisEksik={() => setForm({ tur: "cikisEksik" })}
-              bekleyen={bekleyenSayisi}
-              pinsiz={yetkili("pin") ? pinsizSayisi : 0}
-              eksik={eksikToplam}
-              devamsiz={devamsizToplam}
-              donem={ayAdi(seciliAy)}
-              onGit={setAktifSekme}
             />
           </div>
         )}
@@ -1345,31 +1297,17 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
         {aktifSekme === "talepler" && (
           <div className="space-y-4">
-            <div
-              className={yetkili("cihaz") ? "segment segment-3" : "segment"}
-              style={{ maxWidth: yetkili("cihaz") ? 480 : 360 }}
-              role="tablist"
-              aria-label="Talep türü"
-            >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={talepGorunum === "izin"}
-                data-aktif={talepGorunum === "izin"}
-                onClick={() => setTalepGorunum("izin")}
-              >
-                İzin talepleri
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={talepGorunum === "mesai"}
-                data-aktif={talepGorunum === "mesai"}
-                onClick={() => setTalepGorunum("mesai")}
-              >
-                Fazla mesai{bekleyenMesai > 0 ? ` (${bekleyenMesai})` : ""}
-              </button>
-              {yetkili("cihaz") && (
+            {yetkili("cihaz") && (
+              <div className="segment" style={{ maxWidth: 360 }} role="tablist" aria-label="Talep türü">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={talepGorunum === "izin"}
+                  data-aktif={talepGorunum === "izin"}
+                  onClick={() => setTalepGorunum("izin")}
+                >
+                  İzin talepleri{bekleyenIzin > 0 ? ` (${bekleyenIzin})` : ""}
+                </button>
                 <button
                   type="button"
                   role="tab"
@@ -1379,35 +1317,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 >
                   Telefon{bekleyenCihaz > 0 ? ` (${bekleyenCihaz})` : ""}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
             {talepGorunum === "cihaz" && yetkili("cihaz") ? (
               <CihazTalepleriSekmesi talepler={cihazTalepleri} subeFiltre={seciliSubeFiltre} onKarar={cihazTalebiKarar} />
-            ) : talepGorunum === "mesai" ? (
-              <MesaiSekmesi
-                talepler={mesaiTalepleri}
-                personeller={personeller}
-                hareketler={hareketler}
-                seciliAy={seciliAy}
-                subeFiltre={seciliSubeFiltre}
-                onAyDegis={ayDegistir}
-                onDurum={
-                  yetkili("mesai")
-                    ? (id, durum) => {
-                        if (durum === "ONAYLANDI") return mesaiDurumGuncelle(id, durum);
-                        const t = mesaiTalepleri.find((x) => x.id === id);
-                        setForm({
-                          tur: "red",
-                          talep: "mesai",
-                          id,
-                          ozet: t
-                            ? `${t.personeller?.ad ?? ""} ${t.personeller?.soyad ?? ""}, ${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} fazla mesai`
-                            : "Fazla mesai talebi",
-                        });
-                      }
-                    : undefined
-                }
-              />
             ) : (
               <TaleplerSekmesi
                 izinler={izinler}
@@ -1433,6 +1346,33 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               />
             )}
           </div>
+        )}
+
+        {aktifSekme === "mesai" && (
+          <MesaiSekmesi
+            talepler={mesaiTalepleri}
+            personeller={personeller}
+            hareketler={hareketler}
+            seciliAy={seciliAy}
+            subeFiltre={seciliSubeFiltre}
+            onAyDegis={ayDegistir}
+            onDurum={
+              yetkili("mesai")
+                ? (id, durum) => {
+                    if (durum === "ONAYLANDI") return mesaiDurumGuncelle(id, durum);
+                    const t = mesaiTalepleri.find((x) => x.id === id);
+                    setForm({
+                      tur: "red",
+                      talep: "mesai",
+                      id,
+                      ozet: t
+                        ? `${t.personeller?.ad ?? ""} ${t.personeller?.soyad ?? ""}, ${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} fazla mesai`
+                        : "Fazla mesai talebi",
+                    });
+                  }
+                : undefined
+            }
+          />
         )}
 
         {aktifSekme === "genel" && (
@@ -1562,7 +1502,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           >
             <Ikon ad={s.ikon} boyut={21} />
             {s.kisa}
-            {s.id === "talepler" && bekleyenSayisi > 0 && <span className="alt-sayac">{bekleyenSayisi}</span>}
+            {(sekmeSayaci[s.id] ?? 0) > 0 && <span className="alt-sayac">{sekmeSayaci[s.id]}</span>}
           </button>
         ))}
       </nav>

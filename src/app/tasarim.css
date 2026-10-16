@@ -1199,3 +1199,118 @@ textarea.girdi {
   line-height: 1.45;
   resize: vertical;
 }
+
+/* ---------- Genel bakış ---------- */
+.durum-kart {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--cizgi);
+  border-left: 4px solid var(--renk);
+  border-radius: 12px;
+  background: var(--yuzey);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.durum-kart:hover {
+  background: var(--yuzey-2);
+}
+.durum-kart:active {
+  transform: scale(0.98);
+}
+.durum-kart[data-aktif="true"] {
+  background: var(--yuzey-2);
+  box-shadow: 0 0 0 2px var(--renk);
+}
+.kisi-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--cizgi);
+  border-radius: 999px;
+  background: var(--yuzey-2);
+}
+.canli-nokta {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--giris);
+  animation: canli 2s ease-out infinite;
+}
+@keyframes canli {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--giris) 55%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+.yapilacak {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 20px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.yapilacak:hover {
+  background: var(--yuzey-2);
+}
+.yapilacak-sayi {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--yuzey-2);
+  border: 1px solid var(--cizgi);
+  color: var(--m1);
+  font-size: 16px;
+}
+.yapilacak[data-ton="hata"] .yapilacak-sayi {
+  background: var(--hata-acik);
+  border-color: transparent;
+  color: var(--hata);
+}
+.yapilacak[data-ton="uyari"] .yapilacak-sayi {
+  background: var(--uyari-acik);
+  border-color: transparent;
+  color: var(--uyari);
+}
+.ozet-kutu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--cizgi);
+  border-radius: 12px;
+  background: var(--yuzey);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.1s;
+}
+.ozet-kutu:hover {
+  border-color: var(--cizgi-2);
+}
+.ozet-kutu:active {
+  transform: scale(0.98);
+}
+@media (prefers-reduced-motion: reduce) {
+  .canli-nokta {
+    animation: none;
+  }
+}

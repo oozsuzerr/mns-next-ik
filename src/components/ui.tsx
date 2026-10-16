@@ -42,6 +42,13 @@ const YOLLAR = {
       <path d="M10 20a2 2 0 0 0 4 0" />
     </>
   ),
+  mesai: (
+    <>
+      <circle cx="11" cy="13.5" r="7.5" />
+      <polyline points="11 10 11 13.5 13.5 15" />
+      <path d="M9 3h4M18.5 3.5v5M16 6h5" />
+    </>
+  ),
   hareket: <polyline points="3 12 7.5 12 10 5 14 19 16.5 12 21 12" />,
   personel: (
     <>
