@@ -266,7 +266,7 @@ function MobilGirisEkrani() {
     aciklama: "",
   });
   // Şirket kuralları, yıllık izin bakiyesi ve son talepler (mobil_ozet döndürüyorsa)
-  const [mobilAyar, setMobilAyar] = useState<{ cikis_tolerans_dk: number; erken_giris_payi_dk: number } | null>(null);
+  const [mobilAyar, setMobilAyar] = useState<{ cikis_tolerans_dk: number; erken_giris_payi_dk: number; calismayan_gunler?: number[] | null } | null>(null);
   const [yillikIzin, setYillikIzin] = useState<IzinBakiyesi | null>(null);
   const [talepler, setTalepler] = useState<Talep[] | null>(null);
   const [mesaiTalepleri, setMesaiTalepleri] = useState<MesaiTalep[] | null>(null);
@@ -433,7 +433,7 @@ function MobilGirisEkrani() {
       ? { id: "varsayilan", ad: vardiya.ad ?? "Vardiya", mola_dakika: vardiya.mola_dakika ?? 0, ...vardiya }
       : null;
     const harita = planHaritasi(satirlar);
-    const bul = (tarih: string) => gunPlani(harita.get(`ben|${tarih}`), tarih, varsayilan, (id) => vardiyalar.get(id));
+    const bul = (tarih: string) => gunPlani(harita.get(`ben|${tarih}`), tarih, varsayilan, (id) => vardiyalar.get(id), mobilAyar?.calismayan_gunler ?? [7]);
     const cozucu = vardiyaCozucu(bul, (mobilAyar?.erken_giris_payi_dk ?? VARSAYILAN_AYARLAR.erken_giris_payi_dk) * DK_MS);
     // Plan gelmediyse (SQL güncellenmemiş) eski davranış: sabit varsayılan vardiya
     return { gunPlaniBul: bul, vardiyaBilgisi: plan ? (an: Date) => cozucu(an)?.son ?? null : vardiya };

@@ -611,7 +611,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     const vardiyaBul = (id: string) => vardiyaHaritasi.get(id);
     return (p: Personel) => {
       const varsayilan = p.vardiyalar ?? vardiyalar[0] ?? null;
-      const gunPlaniBul = (tarih: string) => gunPlani(harita.get(`${p.id}|${tarih}`), tarih, varsayilan, vardiyaBul);
+      const gunPlaniBul = (tarih: string) => gunPlani(harita.get(`${p.id}|${tarih}`), tarih, varsayilan, vardiyaBul, ayarlar.calismayan_gunler);
       const cozucu = vardiyaCozucu(gunPlaniBul, ayarlar.erken_giris_payi_dk * DK_MS);
       return { gunPlaniBul, cozucu, bitisBul: (an: Date) => cozucu(an)?.son ?? null };
     };
@@ -960,6 +960,12 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
    * Bordro programına elle ya da şablonla aktarılacak genel puantaj (genel yönetici).
    * Saatler ondalık (2,5 = 2 saat 30 dk); SGK günleri aylık ücretli varsayımıyla tahmindir.
    */
+  /** İzin belgelerinde işe dönüş tarihi için firmanın takvimi */
+  const isTakvimi = {
+    calismayanGunler: ayarlar.calismayan_gunler,
+    tatiller: new Set(resmiTatiller.filter((t) => !t.yarim_gun).map((t) => t.tarih)),
+  };
+
   async function bordroIndir() {
     const kisiler = new Map(personeller.map((p) => [p.id, p]));
     // Özlük (unvan, ücret, IBAN): tablo yoksa ya da okunamazsa boş kalır
@@ -1486,7 +1492,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 onForm={(iz) => {
                   const p = personeller.find((x) => x.id === iz.personel_id);
                   if (!p) return bildir("Personel bulunamadı.", "hata");
-                  const sorun = izinFormuYazdir(yetki.firma?.ad ?? "", p, iz, bakiyeler[p.id]);
+                  const sorun = izinFormuYazdir(yetki.firma?.ad ?? "", p, iz, bakiyeler[p.id], isTakvimi);
                   if (sorun) bildir(sorun, "hata");
                 }}
                 onDurum={
@@ -1659,6 +1665,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 personeller={personeller}
                 vardiyalar={vardiyalar}
                 subeFiltre={seciliSubeFiltre}
+                calismayanGunler={ayarlar.calismayan_gunler}
                 duzenlenebilir={yetkili("plan")}
                 onDegisti={yenile}
               />
@@ -1776,7 +1783,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           onKapat={() => setForm(null)}
           onKayit={yenile}
           onKartYazdir={() => {
-            const sorun = izinKartiYazdir(yetki.firma?.ad ?? "", form.hedef, izinler, bakiyeler[form.hedef.id]);
+            const sorun = izinKartiYazdir(yetki.firma?.ad ?? "", form.hedef, izinler, bakiyeler[form.hedef.id], isTakvimi);
             if (sorun) bildir(sorun, "hata");
           }}
         />

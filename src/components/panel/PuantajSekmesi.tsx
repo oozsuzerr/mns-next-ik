@@ -235,7 +235,7 @@ export default function PuantajSekmesi({
 
       <p className="m3 text-xs leading-relaxed">
         Hesaplama; giriş-çıkış eşleştirmesini (gece vardiyası dahil), 5 dakikalık gecikme ve 15 dakikalık mesai
-        toleransını, 4 saati aşan günlerde vardiya molasının düşülmesini ve vardiya planındaki hafta tatili (plan yoksa Pazar) ile resmi tatil ayrımını esas alır.
+        toleransını, 4 saati aşan günlerde vardiya molasının düşülmesini ve vardiya planındaki hafta tatili (plan yoksa Kurallar bölümündeki çalışılmayan günler) ile resmi tatil ayrımını esas alır.
         Plan dışı mesai vardiya bitişine göre hesaplanır. Yasal haftalık 45 saat sınırı ve zamlı ücret için bordro
         öncesi mali müşavir onayı alın.
       </p>

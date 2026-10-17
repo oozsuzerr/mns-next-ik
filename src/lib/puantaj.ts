@@ -114,7 +114,7 @@ export interface PuantajGirdi {
   izinler: IzinT[];
   resmiTatiller: TatilT[];
   vardiyalar: VardiyaT[];
-  /** Vardiya planı (yoksa varsayılan vardiya ve Pazar tatili geçerli) */
+  /** Vardiya planı (yoksa varsayılan vardiya ve firmanın çalışılmayan günleri geçerli) */
   planlar?: PlanSatiri[];
   /** Tolerans kuralları (yoksa varsayılanlar) */
   ayarlar?: Partial<Ayarlar> | null;
@@ -211,7 +211,7 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
     const oturumlar = oturumlariOlustur(ham);
 
     const vardiya: VardiyaT | null = p.vardiyalar ?? g.vardiyalar[0] ?? null;
-    const gunPlaniBul = (tarih: string) => gunPlani(planlar.get(`${p.id}|${tarih}`), tarih, vardiya, vardiyaBul);
+    const gunPlaniBul = (tarih: string) => gunPlani(planlar.get(`${p.id}|${tarih}`), tarih, vardiya, vardiyaBul, ayar.calismayan_gunler);
     const cozucu = vardiyaCozucu(gunPlaniBul, ayar.erken_giris_payi_dk * DK_MS);
     const bitisBul = (an: Date) => cozucu(an)?.son ?? null;
 
@@ -260,7 +260,11 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       const hg = haftaGunu(tarih);
       const gp = gunPlaniBul(tarih);
       const haftaTatili = gp.tatil;
-      const haftaTatiliMetni = gp.kaynak === "plan" ? "Hafta Tatili (Plan)" : "Hafta Tatili (Pazar)";
+      // Yasal hafta tatili: planda tatil işaretli gün ya da Pazar. Ayardaki diğer çalışılmayan günler (ör. Cumartesi)
+      // tatil sayılır ama o gün çalışma hafta tatili çalışması değil, plan dışı (fazla) çalışmadır.
+      const yasalHaftaTatili = haftaTatili && (gp.kaynak === "plan" || hg === 0);
+      const haftaTatiliMetni =
+        gp.kaynak === "plan" ? "Hafta Tatili (Plan)" : hg === 0 ? "Hafta Tatili (Pazar)" : `Çalışılmayan Gün (${GUN_ADLARI[hg]})`;
       const tatilAdi = tatilHaritasi.get(tarih);
       const isGunu = !haftaTatili && !tatilAdi;
 
@@ -323,6 +327,9 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
             resmiTatilCalisma++;
             resmiTatilDk += netDk;
             durum = `Resmi Tatil Çalışması (${tatilAdi})`;
+          } else if (haftaTatili && !yasalHaftaTatili) {
+            planDisiDk += netDk;
+            durum = `Çalışılmayan Gün Çalışması (${GUN_ADLARI[hg]})`;
           } else if (haftaTatili) {
             haftaTatiliCalisma++;
             haftaTatiliDk += netDk;

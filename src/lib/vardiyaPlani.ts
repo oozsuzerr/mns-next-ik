@@ -1,6 +1,6 @@
 // Vardiya planı: hangi gün hangi vardiyanın geçerli olduğu ve plan uyarıları.
 // Kural: bir gün için plan satırı varsa plan geçerlidir; yoksa personelin
-// varsayılan vardiyası kullanılır ve Pazar hafta tatili sayılır.
+// varsayılan vardiyası kullanılır ve firmanın çalışılmayan günleri (varsayılan: Pazar) tatil sayılır.
 import { haftaGunu, planAni, yerelTarih } from "./tarih";
 
 export interface PlanSatiri {
@@ -70,7 +70,9 @@ export function gunPlani(
   satirlar: PlanSatiri[] | undefined,
   tarih: string,
   varsayilan: PlanVardiya | null,
-  vardiyaBul: (id: string) => PlanVardiya | undefined
+  vardiyaBul: (id: string) => PlanVardiya | undefined,
+  /** Plan yoksa tatil sayılan günler (ISO: 1 = Pazartesi ... 7 = Pazar) */
+  calismayanGunler: readonly number[] = [7]
 ): GunPlani {
   if (satirlar && satirlar.length > 0) {
     const vardiyalar = satirlar
@@ -80,8 +82,8 @@ export function gunPlani(
       .sort((a, b) => a.baslangic_saat.localeCompare(b.baslangic_saat));
     return { kaynak: "plan", tatil: satirlar.some((s) => s.tur === "TATIL"), vardiyalar };
   }
-  const pazar = haftaGunu(tarih) === 0;
-  return { kaynak: "varsayilan", tatil: pazar, vardiyalar: pazar || !varsayilan ? [] : [varsayilan] };
+  const tatil = calismayanGunler.includes(haftaGunu(tarih) || 7);
+  return { kaynak: "varsayilan", tatil, vardiyalar: tatil || !varsayilan ? [] : [varsayilan] };
 }
 
 /** Vardiyanın o günkü gerçek başlangıç ve bitişi (gece vardiyasında bitiş ertesi gün) */

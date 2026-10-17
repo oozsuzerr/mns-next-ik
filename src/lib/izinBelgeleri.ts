@@ -74,9 +74,21 @@ function tr(tarih: string | null | undefined): string {
   return `${g}.${a}.${y}`;
 }
 
-function sonrakiGun(tarih: string): string {
-  const d = new Date(`${tarih}T12:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
+/** İşe dönüş için firmanın takvimi: çalışılmayan günler (ISO 1-7) ve tam gün resmi tatiller */
+export interface IsTakvimi {
+  calismayanGunler: readonly number[];
+  tatiller: ReadonlySet<string>;
+}
+
+/** İzin bitişinden sonraki ilk iş günü (vardiya planı dikkate alınmaz) */
+function isBasiTarihi(bitis: string, takvim?: IsTakvimi): string {
+  const d = new Date(`${bitis}T12:00:00Z`);
+  for (let i = 0; i < 14; i++) {
+    d.setUTCDate(d.getUTCDate() + 1);
+    const t = d.toISOString().slice(0, 10);
+    if (!takvim) return t;
+    if (!takvim.calismayanGunler.includes(d.getUTCDay() || 7) && !takvim.tatiller.has(t)) return t;
+  }
   return d.toISOString().slice(0, 10);
 }
 
@@ -121,7 +133,7 @@ function personelBilgisi(firmaAd: string, p: Personel): string {
 }
 
 /** Kişi başına yıllık ücretli izin kayıt belgesi (izin kartı). Başarılıysa null, sorun varsa mesaj döner. */
-export function izinKartiYazdir(firmaAd: string, p: Personel, izinler: Izin[], bakiye?: IzinBakiyesi): string | null {
+export function izinKartiYazdir(firmaAd: string, p: Personel, izinler: Izin[], bakiye?: IzinBakiyesi, takvim?: IsTakvimi): string | null {
   if (!p.ise_giris_tarihi) return "İzin kartı için önce işe giriş tarihini girin.";
   const bugun = yerelTarih();
   const hak = hakedisYillari(p, bugun);
@@ -146,7 +158,7 @@ export function izinKartiYazdir(firmaAd: string, p: Personel, izinler: Izin[], b
         <td>${k(iz.izin_turu)}</td>
         <td>${tr(iz.baslangic_tarihi)}${saatlik && iz.baslangic_saat ? ` ${k(iz.baslangic_saat.slice(0, 5))}-${k((iz.bitis_saat ?? "").slice(0, 5))}` : ""}</td>
         <td>${saatlik ? "-" : tr(iz.bitis_tarihi)}</td>
-        <td>${saatlik ? "-" : tr(sonrakiGun(iz.bitis_tarihi))}</td>
+        <td>${saatlik ? "-" : tr(isBasiTarihi(iz.bitis_tarihi, takvim))}</td>
         <td class="sag">${gunYaz(iz.gun_sayisi)}</td>
         <td></td>
       </tr>`;
@@ -181,7 +193,7 @@ export function izinKartiYazdir(firmaAd: string, p: Personel, izinler: Izin[], b
       <tr class="toplam"><td>Kalan izin</td><td class="sag">${gunYaz(devreden + hakToplam - kullanilan)}</td></tr>
       ${bakiye?.sonraki_hak_tarihi ? `<tr><td>Sonraki hak kazanma</td><td class="sag">${tr(bakiye.sonraki_hak_tarihi)} (${bakiye.sonraki_hak_gun} gün)</td></tr>` : ""}
     </table>
-    <p class="kucuk">Gün sayıları iş günüdür; hafta tatili ve resmi tatiller izinden düşülmez, arife yarım gün sayılır. Saatlik izinler şirket ayarındaki günlük süreye bölünerek düşer.</p>
+    <p class="kucuk">Hafta tatili ve resmi tatiller izinden düşülmez, arife yarım gün sayılır. Firma kuralına göre izin bitişiyle işe dönüş arasındaki Cumartesi izinden düşülebilir. Saatlik izinler şirket ayarındaki günlük süreye bölünerek düşer.</p>
 
     <div class="imzalar"><div>İşçi<br />Ad soyad / imza</div><div>İşveren veya vekili<br />Ad soyad / imza / kaşe</div></div>
   `;
@@ -189,7 +201,7 @@ export function izinKartiYazdir(firmaAd: string, p: Personel, izinler: Izin[], b
 }
 
 /** Tek izin için imzalanacak izin formu. Başarılıysa null, sorun varsa mesaj döner. */
-export function izinFormuYazdir(firmaAd: string, p: Personel, iz: Izin, bakiye?: IzinBakiyesi): string | null {
+export function izinFormuYazdir(firmaAd: string, p: Personel, iz: Izin, bakiye?: IzinBakiyesi, takvim?: IsTakvimi): string | null {
   const saatlik = iz.izin_turu === "Saatlik İzin";
   const yillik = iz.izin_turu === "Yıllık İzin" || saatlik;
   const govde = `
@@ -204,7 +216,7 @@ export function izinFormuYazdir(firmaAd: string, p: Personel, iz: Izin, bakiye?:
       <tr><td>İzin türü</td><td>${k(iz.izin_turu)}${iz.sgk_kodu ? ` (SGK: ${k(iz.sgk_kodu)})` : ""}</td></tr>
       <tr><td>İzin başlangıcı</td><td>${tr(iz.baslangic_tarihi)}${saatlik && iz.baslangic_saat ? ` ${k(iz.baslangic_saat.slice(0, 5))}` : ""}</td></tr>
       <tr><td>İzin bitişi</td><td>${saatlik ? `${tr(iz.bitis_tarihi)} ${k((iz.bitis_saat ?? "").slice(0, 5))}` : tr(iz.bitis_tarihi)}</td></tr>
-      ${saatlik ? "" : `<tr><td>İşe dönüş tarihi</td><td>${tr(sonrakiGun(iz.bitis_tarihi))} (ya da sonraki ilk iş günü)</td></tr>`}
+      ${saatlik ? "" : `<tr><td>İşe başlama tarihi</td><td>${tr(isBasiTarihi(iz.bitis_tarihi, takvim))}</td></tr>`}
       <tr><td>İzinden düşülen gün</td><td>${gunYaz(iz.gun_sayisi)}</td></tr>
       ${yillik && bakiye?.tanimli ? `<tr><td>Bu izinden sonra kalan yıllık izin</td><td>${gunYaz(bakiye.kalan)} gün</td></tr>` : ""}
       ${iz.aciklama ? `<tr><td>Açıklama</td><td>${k(iz.aciklama)}</td></tr>` : ""}

@@ -4,10 +4,21 @@ import { useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { hataYaz } from "../../lib/tipler";
 import { sureYaz } from "../../lib/tarih";
-import { VARSAYILAN_AYARLAR, type Ayarlar } from "../../lib/ayarlar";
+import { VARSAYILAN_AYARLAR, type Ayarlar, type SayisalAyar } from "../../lib/ayarlar";
 import { Ikon, useBildirim } from "../ui";
 
-const ALANLAR: { anahtar: keyof Ayarlar; ad: string; aciklama: string; min: number; max: number }[] = [
+/** ISO gün numaraları: 1 = Pazartesi ... 7 = Pazar */
+const HAFTA_GUNLERI: [number, string][] = [
+  [1, "Pazartesi"],
+  [2, "Salı"],
+  [3, "Çarşamba"],
+  [4, "Perşembe"],
+  [5, "Cuma"],
+  [6, "Cumartesi"],
+  [7, "Pazar"],
+];
+
+const ALANLAR: { anahtar: SayisalAyar; ad: string; aciklama: string; min: number; max: number }[] = [
   {
     anahtar: "gecikme_tolerans_dk",
     ad: "Gecikme toleransı",
@@ -65,7 +76,15 @@ export default function AyarlarSekmesi({
   const { bildir, onayla } = useBildirim();
   const [f, setF] = useState<Ayarlar>(ayarlar);
   const [yukleniyor, setYukleniyor] = useState(false);
-  const degisti = ALANLAR.some((a) => f[a.anahtar] !== ayarlar[a.anahtar]);
+  const degisti =
+    ALANLAR.some((a) => f[a.anahtar] !== ayarlar[a.anahtar]) ||
+    f.calismayan_gunler.join(",") !== ayarlar.calismayan_gunler.join(",") ||
+    f.izinde_dusulmeyen !== ayarlar.izinde_dusulmeyen;
+
+  function gunDegistir(gun: number, secili: boolean) {
+    const yeni = secili ? [...f.calismayan_gunler, gun] : f.calismayan_gunler.filter((g) => g !== gun);
+    setF({ ...f, calismayan_gunler: [...new Set(yeni)].sort() });
+  }
 
   async function kaydet(e: FormEvent) {
     e.preventDefault();
@@ -76,6 +95,7 @@ export default function AyarlarSekmesi({
         return;
       }
     }
+    if (f.calismayan_gunler.length > 6) return bildir("Haftada en az bir çalışma günü olmalı.", "hata");
     const tamam = await onayla({
       baslik: "Kurallar değiştirilsin mi?",
       metin: "Puantaj, gecikme ve eksik çıkış hesapları tüm dönemler için yeni kurallarla yeniden hesaplanır. Kapalı aylar da ekranda yeni kurala göre görünür.",
@@ -86,7 +106,12 @@ export default function AyarlarSekmesi({
     try {
       const { error } = await supabase
         .from("sirket_ayarlari")
-        .update({ ...Object.fromEntries(ALANLAR.map((a) => [a.anahtar, f[a.anahtar]])), guncelleme: new Date().toISOString() })
+        .update({
+          ...Object.fromEntries(ALANLAR.map((a) => [a.anahtar, f[a.anahtar]])),
+          calismayan_gunler: f.calismayan_gunler,
+          izinde_dusulmeyen: f.izinde_dusulmeyen,
+          guncelleme: new Date().toISOString(),
+        })
         .eq("id", true);
       if (error) throw error;
       bildir("Kurallar kaydedildi.", "basari");
@@ -134,6 +159,48 @@ export default function AyarlarSekmesi({
           ))}
         </ul>
       </div>
+
+      <div className="panel space-y-4 px-5 py-4">
+        <div>
+          <p className="m1 font-semibold">Çalışılmayan günler</p>
+          <p className="m3 text-xs">
+            Vardiya planı girilmemiş günlerde tatil sayılır: o gün gelmeyen devamsız olmaz. Pazar dışındaki günlerde (ör.
+            Cumartesi) yapılan çalışma hafta tatili çalışması değil, plan dışı çalışma sayılır. Vardiya planı girilen günde plan
+            geçerlidir.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {HAFTA_GUNLERI.map(([gun, ad]) => (
+            <label key={gun} className="chip cursor-pointer" style={{ paddingLeft: 10 }}>
+              <input
+                type="checkbox"
+                checked={f.calismayan_gunler.includes(gun)}
+                disabled={!duzenlenebilir}
+                onChange={(e) => gunDegistir(gun, e.target.checked)}
+              />
+              {ad}
+            </label>
+          ))}
+        </div>
+        <div>
+          <p className="m1 font-semibold">Yıllık izinde düşülmeyen günler</p>
+          <p className="m3 mb-2 text-xs">
+            Yargıtay uygulamasına göre Cumartesi, iş sözleşmesinde hafta tatili olarak belirlenmemişse yıllık izinden düşülür.
+            Sözleşmenize göre seçin; emin değilseniz mali müşavirinize danışın.
+          </p>
+          <select
+            className="girdi"
+            style={{ maxWidth: 420 }}
+            value={f.izinde_dusulmeyen}
+            disabled={!duzenlenebilir}
+            onChange={(e) => setF({ ...f, izinde_dusulmeyen: e.target.value === "hepsi" ? "hepsi" : "pazar" })}
+          >
+            <option value="pazar">Yalnızca Pazar (diğer çalışılmayan günler izinden düşülür)</option>
+            <option value="hepsi">Bütün çalışılmayan günler (sözleşmede Cumartesi de hafta tatili)</option>
+          </select>
+        </div>
+      </div>
+
       {duzenlenebilir && (
         <div className="flex justify-end gap-2">
           <button type="button" className="btn btn-ikincil" disabled={!degisti || yukleniyor} onClick={() => setF(ayarlar)}>

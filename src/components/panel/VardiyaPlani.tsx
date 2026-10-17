@@ -113,12 +113,15 @@ export default function VardiyaPlani({
   personeller,
   vardiyalar,
   subeFiltre,
+  calismayanGunler = [7],
   duzenlenebilir = true,
   onDegisti,
 }: {
   personeller: Personel[];
   vardiyalar: Vardiya[];
   subeFiltre: string;
+  /** Plan yoksa tatil sayılan günler (ISO: 1 = Pazartesi ... 7 = Pazar) */
+  calismayanGunler?: number[];
   /** Plan kaydedilince çağrılır (panel puantajı yenilesin diye) */
   /** false ise (plan yetkisi yok) plan yalnızca görüntülenir */
   duzenlenebilir?: boolean;
@@ -406,7 +409,7 @@ export default function VardiyaPlani({
           <ul className="liste" style={{ opacity: yukleniyor ? 0.6 : 1, transition: "opacity 0.15s" }}>
             {gorunenPersonel.map((p) => {
               const anahtar = `${p.id}|${bas}`;
-              const gp = gunPlani(harita.get(anahtar), bas, p.vardiyalar ?? vardiyalar[0] ?? null, vardiyaBul);
+              const gp = gunPlani(harita.get(anahtar), bas, p.vardiyalar ?? vardiyalar[0] ?? null, vardiyaBul, calismayanGunler);
               const uy = hucreUyarilari.get(anahtar);
               const soluk = gp.kaynak === "varsayilan" ? " plan-cip-varsayilan" : "";
               return (
@@ -479,7 +482,7 @@ export default function VardiyaPlani({
                     {gunler.map((t) => {
                       const anahtar = `${p.id}|${t}`;
                       // Puantajla aynı: vardiyası atanmamış personel için ilk tanımlı vardiya varsayılandır
-                      const gp = gunPlani(harita.get(anahtar), t, p.vardiyalar ?? vardiyalar[0] ?? null, vardiyaBul);
+                      const gp = gunPlani(harita.get(anahtar), t, p.vardiyalar ?? vardiyalar[0] ?? null, vardiyaBul, calismayanGunler);
                       const uy = hucreUyarilari.get(anahtar);
                       const soluk = gp.kaynak === "varsayilan" ? " plan-cip-varsayilan" : "";
                       return (
@@ -519,6 +522,7 @@ export default function VardiyaPlani({
 
       {hucre && (
         <HucreFormu
+          calismayanGunler={calismayanGunler}
           personel={hucre.personel}
           tarih={hucre.tarih}
           satirlar={harita.get(`${hucre.personel.id}|${hucre.tarih}`) ?? []}
@@ -602,11 +606,13 @@ function HucreFormu({
   tarih,
   satirlar,
   vardiyalar,
+  calismayanGunler,
   onKapat,
   onKayit,
 }: {
   personel: Personel;
   tarih: string;
+  calismayanGunler: number[];
   satirlar: PlanSatiri[];
   vardiyalar: Vardiya[];
   onKapat: () => void;
@@ -615,11 +621,11 @@ function HucreFormu({
   const { bildir } = useBildirim();
   const planVar = satirlar.length > 0;
   const varsayilan = personel.vardiyalar ?? vardiyalar[0] ?? null;
-  const [tatil, setTatil] = useState(planVar ? satirlar.some((s) => s.tur === "TATIL") : haftaGunu(tarih) === 0);
+  const [tatil, setTatil] = useState(planVar ? satirlar.some((s) => s.tur === "TATIL") : calismayanGunler.includes(haftaGunu(tarih) || 7));
   const [secili, setSecili] = useState<string[]>(
     planVar
       ? satirlar.filter((s) => s.vardiya_id).map((s) => s.vardiya_id as string)
-      : haftaGunu(tarih) === 0 || !varsayilan
+      : calismayanGunler.includes(haftaGunu(tarih) || 7) || !varsayilan
       ? []
       : [varsayilan.id]
   );

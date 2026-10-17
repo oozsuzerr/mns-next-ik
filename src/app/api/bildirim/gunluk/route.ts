@@ -62,7 +62,7 @@ export async function GET(istek: Request) {
       const varsayilan =
         (p.varsayilan_vardiya_id && vardiyaBul(p.varsayilan_vardiya_id)) || vardiyalar.find((v) => v.firma_id === p.firma_id) || null;
       const cozucu = vardiyaCozucu(
-        (t) => gunPlani(harita.get(`${p.id}|${t}`), t, varsayilan, vardiyaBul),
+        (t) => gunPlani(harita.get(`${p.id}|${t}`), t, varsayilan, vardiyaBul, ayarlar.calismayan_gunler),
         ayarlar.erken_giris_payi_dk * DK_MS
       );
       const bitisBul = (an: Date) => cozucu(an)?.son ?? null;
