@@ -36,6 +36,7 @@ import TaleplerSekmesi from "../components/panel/TaleplerSekmesi";
 import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import SubelerSekmesi from "../components/panel/SubelerSekmesi";
+import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
 import VardiyaPlani from "../components/panel/VardiyaPlani";
 import PanelKullanicilari from "../components/panel/PanelKullanicilari";
@@ -469,7 +470,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [seciliSubeFiltre, setSeciliSubeFiltre] = useState("TUMU");
   const [form, setForm] = useState<FormDurumu>(null);
   const [seciliPersonelId, setSeciliPersonelId] = useState<string | null>(null);
-  const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar">("plan");
+  const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar" | "tatiller">("plan");
   const [talepGorunum, setTalepGorunum] = useState<"izin" | "cihaz">("izin");
   const [digerAcik, setDigerAcik] = useState(false);
   const [sifreAcik, setSifreAcik] = useState(false);
@@ -603,7 +604,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
   const bugunOzet: BugunOzet = useMemo(() => {
     const simdi = veriZamani;
-    const resmiTatil = resmiTatiller.some((t) => t.tarih === bugunTarih);
+    const resmiTatil = resmiTatiller.some((t) => t.tarih === bugunTarih && !t.yarim_gun);
 
     const izinliIdleri = new Set(
       izinler
@@ -1507,7 +1508,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
         {aktifSekme === "vardiya" && (
           <div className="space-y-4">
-            <div className="segment segment-3" style={{ maxWidth: 420 }} role="tablist" aria-label="Vardiya bölümü">
+            <div className="segment segment-4" style={{ maxWidth: 560 }} role="tablist" aria-label="Vardiya bölümü">
               <button
                 type="button"
                 role="tab"
@@ -1535,8 +1536,24 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               >
                 Kurallar
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={vardiyaGorunum === "tatiller"}
+                data-aktif={vardiyaGorunum === "tatiller"}
+                onClick={() => setVardiyaGorunum("tatiller")}
+              >
+                Resmi tatiller
+              </button>
             </div>
-            {vardiyaGorunum === "kurallar" ? (
+            {vardiyaGorunum === "tatiller" ? (
+              <ResmiTatillerSekmesi
+                tatiller={resmiTatiller}
+                firmaDuzenleyebilir={genel}
+                sistemYoneticisi={yetki.sistem}
+                onKayit={yenile}
+              />
+            ) : vardiyaGorunum === "kurallar" ? (
               <AyarlarSekmesi key={JSON.stringify(ayarlar)} ayarlar={ayarlar} duzenlenebilir={genel} onKayit={yenile} />
             ) : vardiyaGorunum === "plan" ? (
               <VardiyaPlani

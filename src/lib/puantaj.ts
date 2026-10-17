@@ -53,6 +53,8 @@ export interface IzinT {
 export interface TatilT {
   tarih: string;
   ad: string;
+  /** Arife: sabah iş günü sayılır, kartta not olarak görünür */
+  yarim_gun?: boolean;
 }
 
 export interface GunDetay {
@@ -168,7 +170,9 @@ function oturumlariOlustur(hareketler: HareketT[]): Oturum[] {
 export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
   const gunSayisi = ayGunSayisi(g.yil, g.ay);
   const ayOnek = `${g.yil}-${String(g.ay).padStart(2, "0")}`;
-  const tatilHaritasi = new Map<string, string>(g.resmiTatiller.map((t) => [t.tarih, t.ad]));
+  // Tam gün tatiller tatil sayılır; yarım gün (arife) iş günüdür, yalnızca not düşülür
+  const tatilHaritasi = new Map<string, string>(g.resmiTatiller.filter((t) => !t.yarim_gun).map((t) => [t.tarih, t.ad]));
+  const yarimGunHaritasi = new Map<string, string>(g.resmiTatiller.filter((t) => t.yarim_gun).map((t) => [t.tarih, t.ad]));
   const planlar = planHaritasi(g.planlar ?? []);
   const ayar = ayarlariTamamla(g.ayarlar);
   const cikisToleransMs = ayar.cikis_tolerans_dk * DK_MS;
@@ -386,6 +390,9 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
         tip = "devamsiz";
         durum = "Devamsız";
       }
+
+      const yarimGun = yarimGunHaritasi.get(tarih);
+      if (yarimGun) not = `${yarimGun}: 13:00 sonrası resmi tatil. ${not}`;
 
       detaylar.push({
         gun,

@@ -1136,6 +1136,9 @@ textarea {
 .segment.segment-3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.segment.segment-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
 
 /* ---------- Telefonda hızlı işlem kutuları ---------- */
 .hizli-kutu {

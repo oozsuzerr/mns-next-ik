@@ -112,6 +112,10 @@ export interface ResmiTatil {
   id: string;
   tarih: string;
   ad: string;
+  /** Boşsa Türkiye geneli (ortak) tatil */
+  firma_id?: string | null;
+  /** Arife: 13:00 sonrası tatil, sabah iş günü */
+  yarim_gun?: boolean;
 }
 
 /** Panel kullanıcısının rolü: GENEL her şeyi yönetir, SUBE yalnızca atandığı şubeleri */
