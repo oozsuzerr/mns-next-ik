@@ -35,6 +35,8 @@ const TABLOLAR: Record<string, string> = {
   yonetici_subeleri: "Müdür şubesi",
   ay_kilitleri: "Ay kilidi",
   cihaz_talepleri: "Telefon talebi",
+  personel_ozluk: "Özlük bilgisi",
+  personel_belgeleri: "Personel belgesi",
 };
 
 const ALANLAR: Record<string, string> = {

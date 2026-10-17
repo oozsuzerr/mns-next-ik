@@ -9,12 +9,14 @@ import { Avatar, Bos, Ikon, Rozet } from "../ui";
 function Islemler({
   p,
   onIzin,
+  onOzluk,
   onPin,
   onCihaz,
   onAktif,
 }: {
   p: Personel;
   onIzin: (p: Personel) => void;
+  onOzluk?: (p: Personel) => void;
   onPin?: (p: Personel) => void;
   onCihaz?: (p: Personel) => void;
   onAktif?: (p: Personel) => void;
@@ -25,6 +27,12 @@ function Islemler({
         <Ikon ad="takvim" boyut={14} />
         İzin
       </button>
+      {onOzluk && (
+        <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onOzluk(p)}>
+          <Ikon ad="rapor" boyut={14} />
+          Özlük
+        </button>
+      )}
       {onPin && (
         <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onPin(p)}>
           <Ikon ad="anahtar" boyut={14} />
@@ -66,6 +74,7 @@ export default function PersonelSekmesi({
   personeller,
   bakiyeler,
   onIzinBilgileri,
+  onOzluk,
   onYeni,
   onPin,
   onCihaz,
@@ -75,6 +84,8 @@ export default function PersonelSekmesi({
   /** personel id -> yıllık izin bakiyesi */
   bakiyeler: Record<string, IzinBakiyesi>;
   onIzinBilgileri: (p: Personel) => void;
+  /** Yalnızca genel yönetici: özlük bilgileri ve belgeler */
+  onOzluk?: (p: Personel) => void;
   /** Verilmezse (şube müdürü) ilgili düğmeler gizlenir */
   onYeni?: () => void;
   onPin?: (p: Personel) => void;
@@ -163,7 +174,7 @@ export default function PersonelSekmesi({
                       </td>
                       <td>
                         <div className="flex justify-end">
-                          <Islemler p={p} onIzin={onIzinBilgileri} onPin={onPin} onCihaz={onCihaz} onAktif={onAktif} />
+                          <Islemler p={p} onIzin={onIzinBilgileri} onOzluk={onOzluk} onPin={onPin} onCihaz={onCihaz} onAktif={onAktif} />
                         </div>
                       </td>
                     </tr>
@@ -187,7 +198,7 @@ export default function PersonelSekmesi({
                     </div>
                   </div>
                   <Durumlar p={p} bakiye={bakiyeler[p.id]} />
-                  <Islemler p={p} onIzin={onIzinBilgileri} onPin={onPin} onCihaz={onCihaz} onAktif={onAktif} />
+                  <Islemler p={p} onIzin={onIzinBilgileri} onOzluk={onOzluk} onPin={onPin} onCihaz={onCihaz} onAktif={onAktif} />
                 </li>
               ))}
             </ul>

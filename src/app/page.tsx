@@ -37,6 +37,7 @@ import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import SubelerSekmesi from "../components/panel/SubelerSekmesi";
 import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
+import OzlukKarti from "../components/panel/OzlukKarti";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
 import VardiyaPlani from "../components/panel/VardiyaPlani";
 import PanelKullanicilari from "../components/panel/PanelKullanicilari";
@@ -296,6 +297,7 @@ type FormDurumu =
   | { tur: "cikisEksik" }
   | { tur: "izinBilgi"; hedef: Personel }
   | { tur: "cikis"; hedef: Personel }
+  | { tur: "ozluk"; hedef: Personel }
   | { tur: "red"; talep: "izin" | "mesai"; id: string; ozet: string }
   | null;
 
@@ -328,7 +330,7 @@ async function paneliGetir(seciliAy: string) {
 
   const ayIlk = `${seciliAy}-01`;
   const aySon = gunEkle(`${gunEkle(`${seciliAy}-28`, 7).slice(0, 7)}-01`, -1);
-  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD, ayarD, bakiyeD, mesaiD, cihazD] = await Promise.all([
+  const [subeD, varD, perler, harler, bugunD, izler, tatD, planlar, kilitD, ayarD, bakiyeD, mesaiD, cihazD, belgeD] = await Promise.all([
     supabase.from("subeler").select("*").order("created_at", { ascending: true }),
     supabase.from("vardiyalar").select("*").order("created_at", { ascending: true }),
     tumunuGetir<Personel>((a, b) =>
@@ -401,6 +403,14 @@ async function paneliGetir(seciliAy: string) {
         .eq("durum", "BEKLEMEDE")
         .order("created_at", { ascending: false })
     ).catch(() => ({ data: null })),
+    // Süresi 30 gün içinde dolan ya da dolmuş belgeler (yalnızca genel yöneticiye görünür; tablo yoksa boş)
+    Promise.resolve(
+      supabase
+        .from("personel_belgeleri")
+        .select("id")
+        .not("gecerlilik_bitis", "is", null)
+        .lte("gecerlilik_bitis", gunEkle(yerelTarih(), 30))
+    ).catch(() => ({ data: null })),
   ]);
 
   if (subeD.error) throw subeD.error;
@@ -421,6 +431,7 @@ async function paneliGetir(seciliAy: string) {
     bakiyeler: (bakiyeD.data ?? {}) as Record<string, IzinBakiyesi>,
     mesaiTalepleri: mesaiD,
     cihazTalepleri: (cihazD.data ?? []) as unknown as CihazTalebi[],
+    dolanBelge: (belgeD.data ?? []).length,
   };
 }
 
@@ -461,6 +472,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [bakiyeler, setBakiyeler] = useState<Record<string, IzinBakiyesi>>({});
   const [mesaiTalepleri, setMesaiTalepleri] = useState<MesaiTalebi[]>([]);
   const [cihazTalepleri, setCihazTalepleri] = useState<CihazTalebi[]>([]);
+  const [dolanBelge, setDolanBelge] = useState(0);
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hataMesaji, setHataMesaji] = useState<string | null>(null);
   // "İçeride" hesabındaki 18 saat sınırı için son veri çekme anı
@@ -497,6 +509,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           setBakiyeler(v.bakiyeler);
           setMesaiTalepleri(v.mesaiTalepleri);
           setCihazTalepleri(v.cihazTalepleri);
+          setDolanBelge(v.dolanBelge);
           setVeriZamani(Date.now());
           setHataMesaji(null);
         })
@@ -518,6 +531,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       setBakiyeler,
       setMesaiTalepleri,
       setCihazTalepleri,
+      setDolanBelge,
       setVeriZamani,
       setHataMesaji,
       setYukleniyor,
@@ -705,6 +719,13 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   }, [bugunHareketleri, personeller, seciliSubeFiltre, bugunTarih]);
 
   const yapilacaklar: YapilacakMadde[] = [
+    {
+      sayi: genel ? dolanBelge : 0,
+      metin: "personel belgesinin süresi doldu ya da 30 gün içinde doluyor (rapor, sözleşme vb.)",
+      etiket: "Personel",
+      ton: "uyari",
+      eylem: () => setAktifSekme("personel"),
+    },
     {
       sayi: genel && !yukleniyor && subeler.length === 0 ? 1 : 0,
       metin: "kurulum adımı eksik: şube ve konumu tanımlanmadı, personel giriş/çıkış yapamaz",
@@ -1493,6 +1514,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 personeller={filtrelenmisPersoneller}
                 bakiyeler={bakiyeler}
                 onIzinBilgileri={(p) => setForm({ tur: "izinBilgi", hedef: p })}
+                onOzluk={genel ? (p) => setForm({ tur: "ozluk", hedef: p }) : undefined}
                 onYeni={yetkili("personel") ? () => setForm({ tur: "personel" }) : undefined}
                 onPin={yetkili("pin") ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
                 onCihaz={yetkili("cihaz") ? cihazSifirla : undefined}
@@ -1663,6 +1685,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         <PersonelFormu subeler={subeler} vardiyalar={vardiyalar} onKapat={() => setForm(null)} onKayit={yenile} />
       )}
       {form?.tur === "pin" && <PinFormu hedef={form.hedef} onKapat={() => setForm(null)} onKayit={yenile} />}
+      {form?.tur === "ozluk" && <OzlukKarti hedef={form.hedef} onKapat={() => setForm(null)} />}
       {form?.tur === "cikis" && <IstenCikisFormu hedef={form.hedef} onKapat={() => setForm(null)} onKayit={yenile} />}
       {form?.tur === "vardiya" && (
         <VardiyaFormu duzenlenen={form.duzenlenen} onKapat={() => setForm(null)} onKayit={yenile} />

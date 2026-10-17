@@ -37,6 +37,8 @@ export interface Personel {
   devir_tarihi?: string | null;
   /** İşten çıkış tarihi (pasife alınırken girilir) */
   cikis_tarihi?: string | null;
+  /** Belge dosya yolu için (firma/personel/dosya) */
+  firma_id?: string;
   subeler?: { ad: string } | null;
   vardiyalar?: Vardiya | null;
 }
@@ -148,7 +150,7 @@ export type Yetki = (typeof YETKILER)[number]["anahtar"];
 export type Sekme = "bakis" | "puantaj" | "talepler" | "mesai" | "genel" | "personel" | "vardiya" | "subeler";
 
 export const PERSONEL_KOLONLARI =
-  "id, sicil_no, tc_kimlik, ad, soyad, departman, varsayilan_sube_id, varsayilan_vardiya_id, rol, cihaz_id, aktif, created_at, pin_tanimli, ise_giris_tarihi, dogum_tarihi, devreden_izin_gun, devir_tarihi, cikis_tarihi, subeler:varsayilan_sube_id (ad), vardiyalar:varsayilan_vardiya_id (*)";
+  "id, sicil_no, tc_kimlik, ad, soyad, departman, varsayilan_sube_id, varsayilan_vardiya_id, rol, cihaz_id, aktif, created_at, pin_tanimli, ise_giris_tarihi, dogum_tarihi, devreden_izin_gun, devir_tarihi, cikis_tarihi, firma_id, subeler:varsayilan_sube_id (ad), vardiyalar:varsayilan_vardiya_id (*)";
 
 /** Yıllık izin hesabı (veritabanındaki _yillik_izin_hesapla ile aynı alanlar) */
 export interface IzinBakiyesi {
@@ -192,6 +194,47 @@ export function tcGecerliMi(tc: string): boolean {
   const d11 = d.slice(0, 10).reduce((a, b) => a + b, 0) % 10;
   return d[9] === d10 && d[10] === d11;
 }
+
+/** Özlük bilgileri (yalnızca genel yönetici görür; personel_ozluk tablosu) */
+export interface PersonelOzluk {
+  personel_id: string;
+  telefon: string | null;
+  eposta: string | null;
+  adres: string | null;
+  unvan: string | null;
+  calisma_sekli: string | null;
+  egitim: string | null;
+  acil_kisi: string | null;
+  acil_yakinlik: string | null;
+  acil_telefon: string | null;
+  ucret: number | null;
+  ucret_turu: string | null;
+  iban: string | null;
+  notlar: string | null;
+}
+
+export const CALISMA_SEKILLERI = ["Tam zamanlı", "Yarı zamanlı", "Kısmi süreli", "Belirli süreli", "Stajyer", "Diğer"] as const;
+export const EGITIM_DURUMLARI = ["İlkokul", "Ortaokul", "Lise", "Ön lisans", "Lisans", "Yüksek lisans", "Doktora"] as const;
+export const UCRET_TURLERI = ["Aylık brüt", "Aylık net", "Günlük brüt", "Saatlik brüt"] as const;
+
+/** Personel belgesi (dosyası Storage'da "personel-belgeleri" kovasında) */
+export interface PersonelBelge {
+  id: string;
+  personel_id: string;
+  tur: string;
+  ad: string;
+  dosya_yolu: string;
+  boyut: number | null;
+  mime: string | null;
+  gecerlilik_bitis: string | null;
+  aciklama: string | null;
+  created_at: string;
+}
+
+export const BELGE_TURLERI = ["İş sözleşmesi", "Kimlik", "Diploma", "Sağlık raporu", "İzin belgesi", "SGK evrakı", "Diğer"] as const;
+export const BELGE_KOVASI = "personel-belgeleri";
+export const BELGE_MAKS_BAYT = 10 * 1024 * 1024;
+export const BELGE_TURLERI_MIME = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 
 export function hataYaz(err: unknown): string {
   const metin =
