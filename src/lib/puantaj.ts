@@ -85,6 +85,17 @@ export interface PuantajSatiri {
   raporluGunler: number;
   izinliGunler: number;
   devamsizGunler: number;
+  /** Bordro: izin türüne göre iş günü (yıllık ve saatliksiz yıllık izin, diğer ücretli izin) */
+  yillikIzinGunler: number;
+  ucretliIzinGunler: number;
+  /** Bordro: ücretsiz izin, takvim günü (arada kalan hafta tatili dahil) */
+  ucretsizIzinGunler: number;
+  /** SGK (aylık ücretli): tam ayda 30, giriş/çıkış ayında istihdam edilen takvim günü (en çok 30) */
+  sgkTabanGun: number;
+  /** SGK eksik gün: rapor (01) + ücretsiz izin (21) + devamsızlık (15); birden fazla neden 12 */
+  sgkEksikGun: number;
+  sgkEksikKodu: string;
+  sgkPrimGun: number;
   resmiTatilCalismalari: number;
   haftaTatiliCalismalari: number;
   toplamCalismaDk: number;
@@ -227,6 +238,12 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
     let raporlu = 0;
     let izinli = 0;
     let devamsiz = 0;
+    let yillikIzin = 0;
+    let ucretliIzin = 0;
+    let ucretsizIzin = 0;
+    let istihdam = 0;
+    // SGK istihdam başlangıcı işe giriş tarihidir (kayıt tarihinden eski olabilir)
+    const sgkBaslangic = p.ise_giris_tarihi ?? kayitTarihi;
     let resmiTatilCalisma = 0;
     let haftaTatiliCalisma = 0;
     let toplamDk = 0;
@@ -238,6 +255,8 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
 
     for (let gun = 1; gun <= gunSayisi; gun++) {
       const tarih = gunStr(g.yil, g.ay, gun);
+      const istihdamda = tarih >= sgkBaslangic && (!cikisTarihi || tarih <= cikisTarihi);
+      if (istihdamda) istihdam++;
       const hg = haftaGunu(tarih);
       const gp = gunPlaniBul(tarih);
       const haftaTatili = gp.tatil;
@@ -359,6 +378,8 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
         durum = "İşten Ayrıldı";
       } else if (aktifIzin) {
         const rapor = aktifIzin.izin_turu.includes("Rapor");
+        const ucretsiz = aktifIzin.izin_turu === "Ücretsiz İzin" || /^(21|05)/.test(aktifIzin.sgk_kodu ?? "");
+        if (ucretsiz && istihdamda) ucretsizIzin++;
         if (rapor) {
           // SGK eksik gün sayımında rapor, takvim gününe göre sayılır
           raporlu++;
@@ -366,6 +387,8 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
           durum = `Sağlık Raporu [${aktifIzin.sgk_kodu || "01"}]`;
         } else if (isGunu) {
           izinli++;
+          if (aktifIzin.izin_turu === "Yıllık İzin") yillikIzin++;
+          else if (!ucretsiz) ucretliIzin++;
           tip = "izin";
           durum = `${aktifIzin.izin_turu} [${aktifIzin.sgk_kodu || "İzin"}]`;
         } else {
@@ -407,6 +430,14 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       });
     }
 
+    // SGK prim günü (aylık ücretli): tam ayda 30; giriş/çıkış ayında istihdam günü (en çok 30)
+    const ayIlk = gunStr(g.yil, g.ay, 1);
+    const aySon = gunStr(g.yil, g.ay, gunSayisi);
+    const tamAy = sgkBaslangic <= ayIlk && (!cikisTarihi || cikisTarihi >= aySon);
+    const sgkTaban = tamAy ? 30 : Math.min(30, istihdam);
+    const sgkEksik = Math.min(sgkTaban, raporlu + ucretsizIzin + devamsiz);
+    const nedenler = [raporlu ? "01" : "", ucretsizIzin ? "21" : "", devamsiz ? "15" : ""].filter(Boolean);
+
     return {
       id: p.id,
       sicil_no: p.sicil_no,
@@ -422,6 +453,13 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       raporluGunler: raporlu,
       izinliGunler: izinli,
       devamsizGunler: devamsiz,
+      yillikIzinGunler: yillikIzin,
+      ucretliIzinGunler: ucretliIzin,
+      ucretsizIzinGunler: ucretsizIzin,
+      sgkTabanGun: sgkTaban,
+      sgkEksikGun: sgkEksik,
+      sgkEksikKodu: nedenler.length > 1 ? "12" : (nedenler[0] ?? ""),
+      sgkPrimGun: sgkTaban - sgkEksik,
       resmiTatilCalismalari: resmiTatilCalisma,
       haftaTatiliCalismalari: haftaTatiliCalisma,
       toplamCalismaDk: toplamDk,

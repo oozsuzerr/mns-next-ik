@@ -956,6 +956,62 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     };
   }
 
+  /**
+   * Bordro programına elle ya da şablonla aktarılacak genel puantaj (genel yönetici).
+   * Saatler ondalık (2,5 = 2 saat 30 dk); SGK günleri aylık ücretli varsayımıyla tahmindir.
+   */
+  async function bordroIndir() {
+    const kisiler = new Map(personeller.map((p) => [p.id, p]));
+    // Özlük (unvan, ücret, IBAN): tablo yoksa ya da okunamazsa boş kalır
+    const { data: ozlukD } = await supabase.from("personel_ozluk").select("personel_id, unvan, ucret, ucret_turu, iban");
+    const ozluk = new Map(((ozlukD ?? []) as { personel_id: string; unvan: string | null; ucret: number | null; ucret_turu: string | null; iban: string | null }[]).map((o) => [o.personel_id, o]));
+    const mesaiDk = new Map<string, number>();
+    for (const t of mesaiTalepleri) {
+      if (t.durum === "ONAYLANDI" && t.tarih.startsWith(seciliAy)) mesaiDk.set(t.personel_id, (mesaiDk.get(t.personel_id) ?? 0) + t.sure_dk);
+    }
+    const saat = (dk: number) => Math.round((dk / 60) * 100) / 100;
+    const veriler = filtrelenmisPuantaj.map((p, i) => {
+      const k = kisiler.get(p.id);
+      const o = ozluk.get(p.id);
+      return {
+        Sıra: i + 1,
+        Dönem: seciliAy,
+        "Sicil No": p.sicil_no,
+        "T.C. Kimlik No": k?.tc_kimlik ?? "",
+        Ad: k?.ad ?? p.adSoyad,
+        Soyad: k?.soyad ?? "",
+        Şube: p.subeAdi,
+        Departman: p.departman,
+        Unvan: o?.unvan ?? "",
+        "İşe Giriş": p.iseGiris ?? "",
+        "İşten Çıkış": p.cikisTarihi ?? "",
+        Ücret: o?.ucret ?? "",
+        "Ücret Türü": o?.ucret_turu ?? "",
+        IBAN: o?.iban ?? "",
+        "Fiili Çalışılan Gün": p.calisilanGunler,
+        "Yıllık İzin (iş günü)": p.yillikIzinGunler,
+        "Diğer Ücretli İzin (iş günü)": p.ucretliIzinGunler,
+        "Ücretsiz İzin (takvim günü)": p.ucretsizIzinGunler,
+        "Rapor (takvim günü)": p.raporluGunler,
+        "Devamsız Gün": p.devamsizGunler,
+        "Eksik Hareketli Gün": p.eksikGunler,
+        "SGK Taban Gün": p.sgkTabanGun,
+        "SGK Eksik Gün": p.sgkEksikGun,
+        "SGK Eksik Gün Kodu": p.sgkEksikKodu,
+        "SGK Prim Günü": p.sgkPrimGun,
+        "Net Çalışma (saat)": saat(p.toplamCalismaDk),
+        "Onaylı Fazla Mesai (saat)": saat(mesaiDk.get(p.id) ?? 0),
+        "Plan Dışı Çalışma (saat)": saat(p.planDisiMesaiDk),
+        "Hafta Tatili Çalışma (saat)": saat(p.haftaTatiliMesaiDk),
+        "Resmi Tatil Çalışma (saat)": saat(p.resmiTatilMesaiDk),
+        "Gecikme (saat)": saat(p.gecikmeDk),
+      };
+    });
+    const sorun = disariAktar("xlsx", `Bordro ${seciliAy}`, `${`MNS_Next_IK_${bugunTarih}`}_Bordro_Aktarim_${seciliAy}`, veriler);
+    if (sorun) bildir(sorun, "hata");
+    else bildir("Bordro aktarım dosyası hazırlandı. SGK günleri tahmindir; mali müşavirinizle kontrol edin.", "basari");
+  }
+
   function raporIndir(format: Bicim) {
     const { baslik, dosyaAdi, veriler, sureSutunlari } = aktifSekmeVerisi();
     const sorun = disariAktar(format, baslik, dosyaAdi, veriler, sureSutunlari);
@@ -1244,6 +1300,20 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                       {ad}
                     </button>
                   ))}
+                  {genel && (aktifSekme === "puantaj" || aktifSekme === "bakis") && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="menu-oge"
+                      onClick={() => {
+                        kapat();
+                        bordroIndir();
+                      }}
+                    >
+                      <Ikon ad="rapor" boyut={16} />
+                      Bordro aktarım dosyası (.xlsx)
+                    </button>
+                  )}
                 </>
               )}
             </AcilirMenu>

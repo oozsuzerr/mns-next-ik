@@ -450,9 +450,9 @@ export function IzinFormu({
 
   function turDegis(tur: string) {
     let kod = "01 - İstirahat / Sağlık Raporu";
-    if (tur === "Yıllık İzin" || tur === "Saatlik İzin") kod = "Ücretli İzin (SGK Bildirilmez)";
-    else if (tur === "Ücretsiz İzin") kod = "05 - Ücretsiz İzin";
-    else if (tur === "Mazeret İzni") kod = "13 - Diğer Nedenler";
+    // SGK eksik gün kodları: 01 istirahat, 21 diğer ücretsiz izin (05 tutukluluktur); ücretli izin eksik gün doğurmaz
+    if (tur === "Yıllık İzin" || tur === "Saatlik İzin" || tur === "Mazeret İzni") kod = "Ücretli İzin (SGK Bildirilmez)";
+    else if (tur === "Ücretsiz İzin") kod = "21 - Diğer Ücretsiz İzin";
     setF({ ...f, izin_turu: tur, sgk_kodu: kod });
   }
 
@@ -523,8 +523,9 @@ export function IzinFormu({
         <Alan etiket="SGK eksik gün kodu">
           <select className="girdi" value={f.sgk_kodu} onChange={(e) => setF({ ...f, sgk_kodu: e.target.value })}>
             <option value="01 - İstirahat / Sağlık Raporu">01 - İstirahat / Sağlık Raporu</option>
-            <option value="05 - Ücretsiz İzin">05 - Ücretsiz İzin</option>
-            <option value="13 - Diğer Nedenler">13 - Diğer Nedenler</option>
+            <option value="21 - Diğer Ücretsiz İzin">21 - Diğer ücretsiz izin</option>
+            <option value="15 - Devamsızlık">15 - Devamsızlık</option>
+            <option value="13 - Diğer Nedenler">13 - Diğer nedenler</option>
             <option value="Ücretli İzin (SGK Bildirilmez)">Ücretli İzin (SGK bildirilmez)</option>
           </select>
         </Alan>
