@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { IzinBakiyesi, Personel } from "../../lib/tipler";
 import { gunYaz, tcMaske } from "../../lib/tipler";
+import { kisaTarih } from "../../lib/tarih";
 import { Avatar, Bos, Ikon, Rozet } from "../ui";
 
 function Islemler({
@@ -56,7 +57,7 @@ function Durumlar({ p, bakiye }: { p: Personel; bakiye?: IzinBakiyesi }) {
         <Rozet ton="notr">İşe giriş yok</Rozet>
       )}
       {p.cihaz_id ? <Rozet ton="notr">Cihaz eşleşti</Rozet> : <Rozet ton="uyari">Cihaz boşta</Rozet>}
-      {!p.aktif && <Rozet ton="notr">Pasif</Rozet>}
+      {!p.aktif && <Rozet ton="notr">{p.cikis_tarihi ? `Ayrıldı: ${kisaTarih(p.cikis_tarihi)}` : "Pasif"}</Rozet>}
     </div>
   );
 }

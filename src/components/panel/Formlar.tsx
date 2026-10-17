@@ -207,6 +207,63 @@ export function PersonelFormu({
 // ---------------------------------------------------------------------
 // PIN belirle
 // ---------------------------------------------------------------------
+/** Personeli pasife alırken işten çıkış tarihi sorulur; puantajda sonrası "İşten Ayrıldı" görünür */
+export function IstenCikisFormu({ hedef, onKapat, onKayit }: { hedef: Personel; onKapat: () => void; onKayit: () => void }) {
+  const { bildir } = useBildirim();
+  const [tarih, setTarih] = useState(yerelTarih());
+  const [yukleniyor, setYukleniyor] = useState(false);
+
+  async function kaydet(e: FormEvent) {
+    e.preventDefault();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih)) return bildir("Çıkış tarihini seçin.", "hata");
+    if (hedef.ise_giris_tarihi && tarih < hedef.ise_giris_tarihi) {
+      return bildir(`Çıkış tarihi işe giriş tarihinden (${kisaTarih(hedef.ise_giris_tarihi)}) önce olamaz.`, "hata");
+    }
+    setYukleniyor(true);
+    try {
+      const { error } = await supabase.from("personeller").update({ aktif: false, cikis_tarihi: tarih }).eq("id", hedef.id);
+      if (error) throw error;
+      bildir(`${hedef.ad} ${hedef.soyad} pasife alındı, çıkış tarihi ${kisaTarih(tarih)}.`, "basari");
+      onKayit();
+      onKapat();
+    } catch (err) {
+      bildir(hataYaz(err), "hata");
+    } finally {
+      setYukleniyor(false);
+    }
+  }
+
+  return (
+    <Modal onKapat={onKapat} baslik="İşten çıkış">
+      <form onSubmit={kaydet} className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Avatar ad={hedef.ad} soyad={hedef.soyad} boyut={40} />
+          <div>
+            <p className="m1 font-semibold">
+              {hedef.ad} {hedef.soyad}
+            </p>
+            <p className="m3 text-xs">{hedef.sicil_no}</p>
+          </div>
+        </div>
+        <Alan
+          etiket="Son çalışma günü (işten çıkış tarihi)"
+          ipucu="Mobil girişi hemen kapanır. Puantajda bu tarihe kadar normal hesaplanır, sonrası &quot;İşten Ayrıldı&quot; görünür. Geçmiş kayıtlar silinmez."
+        >
+          <input
+            className="girdi sayi"
+            type="date"
+            required
+            min={hedef.ise_giris_tarihi ?? undefined}
+            value={tarih}
+            onChange={(e) => setTarih(e.target.value)}
+          />
+        </Alan>
+        <Altlik onKapat={onKapat} yukleniyor={yukleniyor} kaydetEtiket="Pasife al" />
+      </form>
+    </Modal>
+  );
+}
+
 export function PinFormu({ hedef, onKapat, onKayit }: { hedef: Personel; onKapat: () => void; onKayit: () => void }) {
   const { bildir } = useBildirim();
   const [pin, setPin] = useState("");

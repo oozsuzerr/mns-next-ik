@@ -5,6 +5,7 @@ import { supabase } from "../../lib/supabase";
 import { YETKILER, hataYaz, type Sube, type Yetki } from "../../lib/tipler";
 import { kisaTarih, yerelTarih } from "../../lib/tarih";
 import { Bos, Ikon, Iskelet, Modal, Rozet, useBildirim } from "../ui";
+import { SifreBelirleFormu } from "../SifreFormlari";
 
 interface Kullanici {
   user_id: string;
@@ -58,6 +59,7 @@ export default function PanelKullanicilari({ subeler }: { subeler: Sube[] }) {
   const [yukleniyor, setYukleniyor] = useState(true);
   const [hata, setHata] = useState<string | null>(null);
   const [form, setForm] = useState<Kullanici | "yeni" | null>(null);
+  const [sifreEposta, setSifreEposta] = useState<string | null>(null);
 
   const getir = useCallback(
     () =>
@@ -157,6 +159,12 @@ export default function PanelKullanicilari({ subeler }: { subeler: Sube[] }) {
                       <Ikon ad="kalem" boyut={14} />
                       Düzenle
                     </button>
+                    {k.eposta && (
+                      <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => setSifreEposta(k.eposta)}>
+                        <Ikon ad="anahtar" boyut={14} />
+                        Şifre
+                      </button>
+                    )}
                     <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => kaldir(k)}>
                       <Ikon ad="cop" boyut={14} />
                       Kaldır
@@ -169,6 +177,7 @@ export default function PanelKullanicilari({ subeler }: { subeler: Sube[] }) {
         )}
       </div>
 
+      {sifreEposta && <SifreBelirleFormu eposta={sifreEposta} onKapat={() => setSifreEposta(null)} />}
       {form && (
         <KullaniciFormu
           mevcut={form === "yeni" ? null : form}

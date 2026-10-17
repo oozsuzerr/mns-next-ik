@@ -8,6 +8,7 @@ import { supabase } from "../../lib/supabase";
 import { hataYaz } from "../../lib/tipler";
 import { kisaTarih, yerelTarih } from "../../lib/tarih";
 import { Bos, Iskelet, Ikon, Marka, Modal, Rozet, useBildirim } from "../../components/ui";
+import { SifreBelirleFormu } from "../../components/SifreFormlari";
 
 interface FirmaSatiri {
   id: string;
@@ -59,6 +60,7 @@ export default function SistemSayfasi() {
   const [firmalar, setFirmalar] = useState<FirmaSatiri[]>([]);
   const [yenileniyor, setYenileniyor] = useState(false);
   const [formAcik, setFormAcik] = useState(false);
+  const [sifreEposta, setSifreEposta] = useState<string | null>(null);
 
   const listeyiGetir = useCallback(async () => {
     setYenileniyor(true);
@@ -178,6 +180,21 @@ export default function SistemSayfasi() {
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      {genel.map(
+                        (y) =>
+                          y.eposta && (
+                            <button
+                              key={y.eposta}
+                              type="button"
+                              className="btn btn-hayalet btn-kucuk"
+                              onClick={() => setSifreEposta(y.eposta)}
+                              title={`${y.eposta} için yeni şifre`}
+                            >
+                              <Ikon ad="anahtar" boyut={14} />
+                              Şifre{genel.length > 1 ? `: ${y.eposta}` : ""}
+                            </button>
+                          )
+                      )}
                       <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => baglantiKopyala(f.kod)}>
                         <Ikon ad="telefon" boyut={14} />
                         Mobil bağlantı
@@ -198,6 +215,7 @@ export default function SistemSayfasi() {
         </div>
       </main>
 
+      {sifreEposta && <SifreBelirleFormu eposta={sifreEposta} onKapat={() => setSifreEposta(null)} />}
       {formAcik && (
         <YeniFirmaFormu
           onKapat={() => setFormAcik(false)}

@@ -44,6 +44,7 @@ import AyarlarSekmesi from "../components/panel/AyarlarSekmesi";
 import MesaiSekmesi from "../components/panel/MesaiSekmesi";
 import CihazTalepleriSekmesi from "../components/panel/CihazTalepleriSekmesi";
 import BildirimDugmesi from "../components/BildirimDugmesi";
+import { SifreDegistirFormu, SifremiUnuttumFormu } from "../components/SifreFormlari";
 import { olayBildir } from "../lib/bildirim";
 import {
   CikisEksikListesi,
@@ -56,6 +57,7 @@ import {
   type ManuelBaslangic,
   PersonelFormu,
   PinFormu,
+  IstenCikisFormu,
   VardiyaFormu,
 } from "../components/panel/Formlar";
 
@@ -88,7 +90,12 @@ export default function Home() {
       setOturum(data.session);
       setHazir(true);
     });
-    const { data: abone } = supabase.auth.onAuthStateChange((_olay, s) => {
+    const { data: abone } = supabase.auth.onAuthStateChange((olay, s) => {
+      // "Şifremi unuttum" bağlantısı izin verilen adres yerine ana sayfaya düşerse yeni şifre sayfasına geç
+      if (olay === "PASSWORD_RECOVERY") {
+        window.location.replace("/sifre-yenile");
+        return;
+      }
       setOturum(s);
     });
     return () => abone.subscription.unsubscribe();
@@ -165,6 +172,7 @@ function YoneticiGiris() {
   const [goster, setGoster] = useState(false);
   const [hata, setHata] = useState<string | null>(null);
   const [yukleniyor, setYukleniyor] = useState(false);
+  const [unuttumAcik, setUnuttumAcik] = useState(false);
 
   async function girisYap(e: FormEvent) {
     e.preventDefault();
@@ -251,6 +259,12 @@ function YoneticiGiris() {
             </div>
           </div>
 
+          <div className="-mt-2 flex justify-end">
+            <button type="button" className="m2 text-sm underline" onClick={() => setUnuttumAcik(true)}>
+              Şifremi unuttum
+            </button>
+          </div>
+
           {hata && (
             <p className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--hata)" }} role="alert">
               <Ikon ad="uyari" boyut={16} />
@@ -263,6 +277,7 @@ function YoneticiGiris() {
           </button>
         </form>
       </div>
+      {unuttumAcik && <SifremiUnuttumFormu ilkEposta={eposta} onKapat={() => setUnuttumAcik(false)} />}
     </div>
   );
 }
@@ -279,6 +294,7 @@ type FormDurumu =
   | { tur: "gelmeyen" }
   | { tur: "cikisEksik" }
   | { tur: "izinBilgi"; hedef: Personel }
+  | { tur: "cikis"; hedef: Personel }
   | { tur: "red"; talep: "izin" | "mesai"; id: string; ozet: string }
   | null;
 
@@ -456,6 +472,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar">("plan");
   const [talepGorunum, setTalepGorunum] = useState<"izin" | "cihaz">("izin");
   const [digerAcik, setDigerAcik] = useState(false);
+  const [sifreAcik, setSifreAcik] = useState(false);
   const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
 
   // -------------------------------------------------------------------
@@ -897,6 +914,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         Departman: p.departman,
         Şube: p.subeAdi,
         Vardiya: p.vardiyaAdi,
+        "İşe Giriş": p.iseGiris ?? "-",
+        "İşten Çıkış": p.cikisTarihi ?? "-",
         "Çalışılan Gün": p.calisilanGunler,
         "Eksik Hareketli Gün": p.eksikGunler,
         "Raporlu Gün (SGK 01)": p.raporluGunler,
@@ -992,17 +1011,18 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   }
 
   async function personelAktifDegistir(p: Personel) {
+    // Pasife almak işten çıkıştır: çıkış tarihi ayrı formda sorulur
+    if (p.aktif) return setForm({ tur: "cikis", hedef: p });
     const tamam = await onayla({
-      baslik: p.aktif ? `${p.ad} ${p.soyad} pasife alınsın mı?` : `${p.ad} ${p.soyad} tekrar aktif edilsin mi?`,
-      metin: p.aktif
-        ? "Mobil girişi kapanır. Geçmiş kayıtlar ve puantaj korunur."
+      baslik: `${p.ad} ${p.soyad} tekrar aktif edilsin mi?`,
+      metin: p.cikis_tarihi
+        ? `Mobil girişi yeniden açılır ve ${kisaTarih(p.cikis_tarihi)} çıkış tarihi kaldırılır (yeniden işe başlama).`
         : "Mobil girişi yeniden açılır.",
-      onayEtiketi: p.aktif ? "Pasife al" : "Aktif et",
-      tehlikeli: p.aktif,
+      onayEtiketi: "Aktif et",
     });
     if (!tamam) return;
     try {
-      const { error } = await supabase.from("personeller").update({ aktif: !p.aktif }).eq("id", p.id);
+      const { error } = await supabase.from("personeller").update({ aktif: true, cikis_tarihi: null }).eq("id", p.id);
       if (error) throw error;
       bildir(p.aktif ? "Personel pasife alındı." : "Personel aktif edildi.", "basari");
       await yenile();
@@ -1124,6 +1144,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             <Ikon ad="telefon" />
             Mobil ekranı aç
           </a>
+          <button type="button" className="nav-oge" onClick={() => setSifreAcik(true)}>
+            <Ikon ad="anahtar" />
+            Şifremi değiştir
+          </button>
           <button type="button" className="nav-oge" onClick={onCikis}>
             <Ikon ad="cikis" />
             Çıkış yap
@@ -1598,17 +1622,31 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               <Ikon ad="telefon" boyut={16} />
               Mobil ekranı aç
             </a>
+            <button
+              type="button"
+              className="btn btn-ikincil w-full"
+              onClick={() => {
+                setDigerAcik(false);
+                setSifreAcik(true);
+              }}
+            >
+              <Ikon ad="anahtar" boyut={16} />
+              Şifremi değiştir
+            </button>
+            <p className="m3 truncate pt-1 text-center text-xs">{eposta}</p>
           </div>
         </Modal>
       )}
 
       {/* Pencereler */}
+      {sifreAcik && <SifreDegistirFormu onKapat={() => setSifreAcik(false)} />}
       {seciliSatir && <PuantajKarti satir={seciliSatir} seciliAy={seciliAy} onKapat={() => setSeciliPersonelId(null)} />}
 
       {form?.tur === "personel" && (
         <PersonelFormu subeler={subeler} vardiyalar={vardiyalar} onKapat={() => setForm(null)} onKayit={yenile} />
       )}
       {form?.tur === "pin" && <PinFormu hedef={form.hedef} onKapat={() => setForm(null)} onKayit={yenile} />}
+      {form?.tur === "cikis" && <IstenCikisFormu hedef={form.hedef} onKapat={() => setForm(null)} onKayit={yenile} />}
       {form?.tur === "vardiya" && (
         <VardiyaFormu duzenlenen={form.duzenlenen} onKapat={() => setForm(null)} onKayit={yenile} />
       )}

@@ -23,6 +23,8 @@ export interface PersonelT {
   varsayilan_sube_id: string | null;
   aktif: boolean;
   created_at: string;
+  ise_giris_tarihi?: string | null;
+  cikis_tarihi?: string | null;
   subeler?: { ad: string } | null;
   vardiyalar?: VardiyaT | null;
 }
@@ -66,6 +68,9 @@ export interface GunDetay {
 }
 
 export interface PuantajSatiri {
+  /** İşe giriş ve işten çıkış tarihleri (bordro için dışa aktarılır) */
+  iseGiris: string | null;
+  cikisTarihi: string | null;
   id: string;
   sicil_no: string;
   adSoyad: string;
@@ -179,6 +184,8 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
 
   const dahilPersoneller = g.personeller.filter((p) => {
     if (p.aktif) return true;
+    // Çıkış tarihi bu ay ya da sonrasıysa (o ay çalıştığı günler var) puantaja girer
+    if (p.cikis_tarihi && p.cikis_tarihi >= `${ayOnek}-01`) return true;
     // Pasif personel, o ay hareketi varsa yine de puantajda görünür (işten ayrılan)
     const ham = hareketlerPersonele.get(p.id) ?? [];
     return ham.some((h) => yerelTarih(h.created_at).startsWith(ayOnek));
@@ -203,7 +210,11 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       else gunHaritasi.set(anahtar, [o]);
     }
 
-    const kadroBaslangic = yerelTarih(p.created_at);
+    // Kadro başlangıcı: sisteme kayıt tarihi; işe giriş daha sonraysa işe giriş tarihi
+    // (işe giriş daha eskiyse sisteme kayıttan önceki aylar devamsız sayılmasın diye kayıt tarihi esas)
+    const kayitTarihi = yerelTarih(p.created_at);
+    const kadroBaslangic = p.ise_giris_tarihi && p.ise_giris_tarihi > kayitTarihi ? p.ise_giris_tarihi : kayitTarihi;
+    const cikisTarihi = p.cikis_tarihi ?? null;
     const personelIzinleri = g.izinler.filter(
       (iz) => iz.personel_id === p.id && (!iz.durum || iz.durum === "ONAYLANDI")
     );
@@ -340,6 +351,8 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
           if (eksik.some((o) => !o.giris)) not += "Giriş kaydı yok. ";
           if (eksik.some((o) => !o.cikis)) not += "Çıkış kaydı yok. ";
         }
+      } else if (cikisTarihi && tarih > cikisTarihi) {
+        durum = "İşten Ayrıldı";
       } else if (aktifIzin) {
         const rapor = aktifIzin.izin_turu.includes("Rapor");
         if (rapor) {
@@ -395,6 +408,8 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       subeAdi: p.subeler?.ad || "Atanmamış",
       subeId: p.varsayilan_sube_id,
       vardiyaAdi: vardiya?.ad || "Tanımsız",
+      iseGiris: p.ise_giris_tarihi ?? null,
+      cikisTarihi,
       calisilanGunler: calisilan,
       eksikGunler: eksikGun,
       raporluGunler: raporlu,
