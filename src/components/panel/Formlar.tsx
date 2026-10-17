@@ -855,6 +855,7 @@ export function IzinBilgileriFormu({
   duzenlenebilir,
   onKapat,
   onKayit,
+  onKartYazdir,
 }: {
   hedef: Personel;
   bakiye?: IzinBakiyesi;
@@ -862,6 +863,8 @@ export function IzinBilgileriFormu({
   duzenlenebilir: boolean;
   onKapat: () => void;
   onKayit: () => void;
+  /** Yıllık ücretli izin kayıt belgesi (izin kartı) yazdır */
+  onKartYazdir?: () => void;
 }) {
   const { bildir } = useBildirim();
   const [yukleniyor, setYukleniyor] = useState(false);
@@ -907,6 +910,14 @@ export function IzinBilgileriFormu({
 
   return (
     <Modal onKapat={onKapat} baslik={`${hedef.ad} ${hedef.soyad}: yıllık izin`}>
+      {onKartYazdir && hedef.ise_giris_tarihi && (
+        <div className="-mt-1 mb-3 flex justify-end">
+          <button type="button" className="btn btn-ikincil btn-kucuk" onClick={onKartYazdir}>
+            <Ikon ad="rapor" boyut={14} />
+            İzin kartını yazdır
+          </button>
+        </div>
+      )}
       {bakiye?.tanimli ? (
         <div className="panel-ic mb-4 grid grid-cols-2 gap-3 p-4 text-sm">
           <div>

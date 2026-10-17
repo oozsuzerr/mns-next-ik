@@ -47,6 +47,7 @@ import MesaiSekmesi from "../components/panel/MesaiSekmesi";
 import CihazTalepleriSekmesi from "../components/panel/CihazTalepleriSekmesi";
 import BildirimDugmesi from "../components/BildirimDugmesi";
 import { SifreDegistirFormu, SifremiUnuttumFormu } from "../components/SifreFormlari";
+import { izinFormuYazdir, izinKartiYazdir } from "../lib/izinBelgeleri";
 import { olayBildir } from "../lib/bildirim";
 import {
   CikisEksikListesi,
@@ -1412,6 +1413,12 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               <TaleplerSekmesi
                 izinler={izinler}
                 bakiyeler={bakiyeler}
+                onForm={(iz) => {
+                  const p = personeller.find((x) => x.id === iz.personel_id);
+                  if (!p) return bildir("Personel bulunamadı.", "hata");
+                  const sorun = izinFormuYazdir(yetki.firma?.ad ?? "", p, iz, bakiyeler[p.id]);
+                  if (sorun) bildir(sorun, "hata");
+                }}
                 onDurum={
                   yetkili("izin")
                     ? (id, durum) => {
@@ -1698,6 +1705,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           duzenlenebilir={yetkili("personel")}
           onKapat={() => setForm(null)}
           onKayit={yenile}
+          onKartYazdir={() => {
+            const sorun = izinKartiYazdir(yetki.firma?.ad ?? "", form.hedef, izinler, bakiyeler[form.hedef.id]);
+            if (sorun) bildir(sorun, "hata");
+          }}
         />
       )}
       {form?.tur === "manuel" && (

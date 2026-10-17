@@ -16,11 +16,13 @@ function TalepSatiri({
   bakiye,
   onDurum,
   onSil,
+  onForm,
 }: {
   iz: Izin;
   bakiye?: IzinBakiyesi;
   onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
   onSil?: (id: string) => void;
+  onForm?: (iz: Izin) => void;
 }) {
   const ad = iz.personeller?.ad ?? "?";
   const soyad = iz.personeller?.soyad ?? "";
@@ -96,6 +98,12 @@ function TalepSatiri({
         ) : (
           <>
             {iz.durum === "REDDEDILDI" ? <Rozet ton="hata">Reddedildi</Rozet> : <Rozet ton="giris">Onaylandı</Rozet>}
+            {iz.durum !== "REDDEDILDI" && onForm && (
+              <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => onForm(iz)} title="İmzalanacak izin formunu yazdır">
+                <Ikon ad="rapor" boyut={14} />
+                Form
+              </button>
+            )}
             {onSil && (
               <button
                 type="button"
@@ -119,6 +127,7 @@ export default function TaleplerSekmesi({
   onDurum,
   onSil,
   onYeni,
+  onForm,
 }: {
   izinler: Izin[];
   bakiyeler?: Record<string, IzinBakiyesi>;
@@ -126,6 +135,8 @@ export default function TaleplerSekmesi({
   onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
   onSil?: (id: string) => void;
   onYeni?: () => void;
+  /** Onaylı izin için imzalanacak izin formu (yazdır / PDF) */
+  onForm?: (iz: Izin) => void;
 }) {
   const bekleyen = izinler.filter((iz) => iz.durum === "BEKLEMEDE");
   const gecmis = izinler.filter((iz) => iz.durum !== "BEKLEMEDE");
@@ -151,7 +162,7 @@ export default function TaleplerSekmesi({
           ) : (
             <ul className="liste">
               {bekleyen.map((iz) => (
-                <TalepSatiri key={iz.id} iz={iz} bakiye={bakiyeler[iz.personel_id]} onDurum={onDurum} onSil={onSil} />
+                <TalepSatiri key={iz.id} iz={iz} bakiye={bakiyeler[iz.personel_id]} onDurum={onDurum} onSil={onSil} onForm={onForm} />
               ))}
             </ul>
           )}
@@ -166,7 +177,7 @@ export default function TaleplerSekmesi({
           ) : (
             <ul className="liste">
               {gecmis.map((iz) => (
-                <TalepSatiri key={iz.id} iz={iz} bakiye={bakiyeler[iz.personel_id]} onDurum={onDurum} onSil={onSil} />
+                <TalepSatiri key={iz.id} iz={iz} bakiye={bakiyeler[iz.personel_id]} onDurum={onDurum} onSil={onSil} onForm={onForm} />
               ))}
             </ul>
           )}
