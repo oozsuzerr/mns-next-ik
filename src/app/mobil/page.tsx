@@ -10,6 +10,7 @@ import { gunPlani, planHaritasi, vardiyaCozucu, type GunPlani, type PlanSatiri, 
 import { VardiyamKarti } from "../../components/mobil/Vardiyam";
 import BildirimDugmesi from "../../components/BildirimDugmesi";
 import MobilDuyurular from "../../components/mobil/MobilDuyurular";
+import MobilZimmetler from "../../components/mobil/MobilZimmetler";
 import { olayBildir } from "../../lib/bildirim";
 import { anaEkrandaMi, cihazBilgisi, cihazKimligi, iosMu } from "../../lib/cihazKimligi";
 import { gunYaz, type IzinBakiyesi } from "../../lib/tipler";
@@ -1116,6 +1117,9 @@ function MobilGirisEkrani() {
           </ul>
         </section>
       )}
+
+      {/* Zimmetimdeki eşyalar */}
+      {token && <MobilZimmetler token={token} />}
 
       {/* Önceki işlemler */}
       {gecmis.length > 0 && (

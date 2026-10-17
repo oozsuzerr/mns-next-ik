@@ -58,7 +58,7 @@ export function yillikKullanimlar(p: Personel, izinler: Izin[]): Izin[] {
     .sort((a, b) => a.baslangic_tarihi.localeCompare(b.baslangic_tarihi));
 }
 
-function k(deger: unknown): string {
+export function k(deger: unknown): string {
   return String(deger ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -68,7 +68,7 @@ function k(deger: unknown): string {
 }
 
 /** "2026-10-17" -> "17.10.2026" */
-function tr(tarih: string | null | undefined): string {
+export function tr(tarih: string | null | undefined): string {
   if (!tarih) return "-";
   const [y, a, g] = tarih.slice(0, 10).split("-");
   return `${g}.${a}.${y}`;
@@ -110,7 +110,7 @@ const STIL = `
   @media print { body { padding: 0; } @page { size: A4; margin: 14mm; } }
 `;
 
-function yazdir(baslik: string, govde: string): string | null {
+export function yazdir(baslik: string, govde: string): string | null {
   const pencere = window.open("", "_blank");
   if (!pencere) return "Açılır pencere engellendi. Tarayıcıdan bu site için izin verin.";
   pencere.document.write(
@@ -122,7 +122,7 @@ function yazdir(baslik: string, govde: string): string | null {
   return null;
 }
 
-function personelBilgisi(firmaAd: string, p: Personel): string {
+export function personelBilgisi(firmaAd: string, p: Personel): string {
   return `<table class="bilgi">
     <tr><td>İşveren</td><td>${k(firmaAd)}</td></tr>
     <tr><td>İşçinin adı soyadı</td><td>${k(`${p.ad} ${p.soyad}`)}</td></tr>
