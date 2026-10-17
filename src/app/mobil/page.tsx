@@ -12,6 +12,7 @@ import BildirimDugmesi from "../../components/BildirimDugmesi";
 import MobilDuyurular from "../../components/mobil/MobilDuyurular";
 import MobilZimmetler from "../../components/mobil/MobilZimmetler";
 import MobilOdemeler from "../../components/mobil/MobilOdemeler";
+import MobilEgitimler from "../../components/mobil/MobilEgitimler";
 import { olayBildir } from "../../lib/bildirim";
 import { anaEkrandaMi, cihazBilgisi, cihazKimligi, iosMu } from "../../lib/cihazKimligi";
 import { gunYaz, type IzinBakiyesi } from "../../lib/tipler";
@@ -1124,6 +1125,9 @@ function MobilGirisEkrani() {
 
       {/* Zimmetimdeki eşyalar */}
       {token && <MobilZimmetler token={token} />}
+
+      {/* Eğitimlerim */}
+      {token && <MobilEgitimler token={token} />}
 
       {/* Önceki işlemler */}
       {gecmis.length > 0 && (
