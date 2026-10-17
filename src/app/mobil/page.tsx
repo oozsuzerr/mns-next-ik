@@ -9,6 +9,7 @@ import { cikisiEksikGirisler, suankiGiris, type MesaiVardiya, type VardiyaBilgis
 import { gunPlani, planHaritasi, vardiyaCozucu, type GunPlani, type PlanSatiri, type PlanVardiya } from "../../lib/vardiyaPlani";
 import { VardiyamKarti } from "../../components/mobil/Vardiyam";
 import BildirimDugmesi from "../../components/BildirimDugmesi";
+import MobilDuyurular from "../../components/mobil/MobilDuyurular";
 import { olayBildir } from "../../lib/bildirim";
 import { anaEkrandaMi, cihazBilgisi, cihazKimligi, iosMu } from "../../lib/cihazKimligi";
 import { gunYaz, type IzinBakiyesi } from "../../lib/tipler";
@@ -883,6 +884,9 @@ function MobilGirisEkrani() {
         </p>
         <p className="m2 mt-1 text-sm">{uzunTarih()}</p>
       </section>
+
+      {/* Duyurular: okunmamışlar açık durur */}
+      {token && <MobilDuyurular token={token} />}
 
       {/* Vardiyam: bugün, yarın ve aylık takvim (plan verisi geldiyse) */}
       {plan && <VardiyamKarti gunPlaniBul={gunPlaniBul} />}

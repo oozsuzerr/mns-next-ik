@@ -9,6 +9,7 @@
 //   { olay: "mesai", token }                         personel mobilden fazla mesai bildirdi
 //   { olay: "mesai_sonuc", mesai_id }                yönetici fazla mesaiyi onayladı/reddetti (Bearer)
 //   { olay: "cihaz", talep_id, cihaz }               kilitli personel yeni telefon talebi gönderdi (oturumsuz)
+//   { olay: "duyuru", duyuru_id }                     yönetici yeni duyuru yayınladı (Bearer)
 import { bildirimGonder, kullaniciIstemcisi, servisIstemcisi, sorumlular } from "../../../lib/sunucuBildirim";
 import { GUN_ADLARI, haftaGunu, kisaTarih, sureYaz, yerelTarih } from "../../../lib/tarih";
 import { gunEkle } from "../../../lib/vardiyaPlani";
@@ -211,6 +212,33 @@ export async function POST(istek: Request) {
           metin: `${gunler.join(", ")}${tarihler.length > 3 ? ` ve ${tarihler.length - 3} gün daha` : ""}. Ayrıntı için Vardiyam'a bakın.`,
           adres: "/mobil",
           etiket: "plan",
+        }
+      );
+      return yanit(200, { gonderilen });
+    }
+
+    // ------------------------------------------------------------ yeni duyuru
+    if (govde.olay === "duyuru") {
+      // Kullanıcının kendi yetkisiyle okunur: göremediği duyuru için bildirim gönderemez; yalnızca yeni duyuru
+      const { data: d } = await kullanici
+        .from("duyurular")
+        .select("id, firma_id, sube_id, baslik, metin, onemli")
+        .eq("id", String(govde.duyuru_id ?? ""))
+        .gte("created_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+        .maybeSingle();
+      if (!d) return yanit(200, { gonderilen: 0 });
+      let sorgu = servis.from("personeller").select("id").eq("firma_id", d.firma_id).eq("aktif", true);
+      if (d.sube_id) sorgu = sorgu.eq("varsayilan_sube_id", d.sube_id);
+      const { data: hedef } = await sorgu;
+      const metin = String(d.metin).replace(/\s+/g, " ").trim();
+      const gonderilen = await bildirimGonder(
+        servis,
+        { personeller: (hedef ?? []).map((p) => p.id as string) },
+        {
+          baslik: `${d.onemli ? "Önemli duyuru: " : "Duyuru: "}${d.baslik}`,
+          metin: metin.length > 140 ? `${metin.slice(0, 137)}...` : metin,
+          adres: "/mobil",
+          etiket: `duyuru-${d.id}`,
         }
       );
       return yanit(200, { gonderilen });

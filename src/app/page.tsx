@@ -36,6 +36,7 @@ import TaleplerSekmesi from "../components/panel/TaleplerSekmesi";
 import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import SubelerSekmesi from "../components/panel/SubelerSekmesi";
+import IkSekmesi from "../components/panel/ik/IkSekmesi";
 import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
 import OzlukKarti from "../components/panel/OzlukKarti";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
@@ -72,6 +73,7 @@ const SEKMELER: { id: Sekme; etiket: string; kisa: string; ikon: IkonAdi }[] = [
   { id: "genel", etiket: "Hareketler", kisa: "Hareket", ikon: "hareket" },
   { id: "personel", etiket: "Personel", kisa: "Personel", ikon: "personel" },
   { id: "vardiya", etiket: "Vardiyalar", kisa: "Vardiya", ikon: "vardiya" },
+  { id: "ik", etiket: "İK işlemleri", kisa: "İK", ikon: "ik" },
   // Yalnızca genel yönetici görür (bkz. gorunenSekmeler)
   { id: "subeler", etiket: "Şubeler", kisa: "Şube", ikon: "konum" },
 ];
@@ -1272,7 +1274,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               ))}
             </select>
 
-            {yetkili("rapor") && (
+            {yetkili("rapor") && aktifSekme !== "ik" && (
             <AcilirMenu
               etiket="Rapor indir"
               tetikleyici={
@@ -1606,6 +1608,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             )}
           </div>
         )}
+
+        {aktifSekme === "ik" && <IkSekmesi personeller={personeller} subeler={subeler} yonetici={yetki} />}
 
         {aktifSekme === "subeler" && genel && (
           <SubelerSekmesi subeler={subeler} personeller={personeller} duzenlenebilir={genel} onKayit={yenile} />

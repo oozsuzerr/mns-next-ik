@@ -184,6 +184,12 @@ const YOLLAR = {
       <circle cx="18.5" cy="12" r="1.6" />
     </>
   ),
+  ik: (
+    <>
+      <rect x="3.5" y="7.5" width="17" height="12" rx="2" />
+      <path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5M3.5 13h17" />
+    </>
+  ),
   guc: (
     <>
       <path d="M12 3.5v8" />
