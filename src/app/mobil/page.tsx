@@ -11,6 +11,7 @@ import { VardiyamKarti } from "../../components/mobil/Vardiyam";
 import BildirimDugmesi from "../../components/BildirimDugmesi";
 import MobilDuyurular from "../../components/mobil/MobilDuyurular";
 import MobilZimmetler from "../../components/mobil/MobilZimmetler";
+import MobilOdemeler from "../../components/mobil/MobilOdemeler";
 import { olayBildir } from "../../lib/bildirim";
 import { anaEkrandaMi, cihazBilgisi, cihazKimligi, iosMu } from "../../lib/cihazKimligi";
 import { gunYaz, type IzinBakiyesi } from "../../lib/tipler";
@@ -1049,6 +1050,9 @@ function MobilGirisEkrani() {
           <Ikon ad="sag" className="m3" />
         </button>
       )}
+
+      {/* Avans ve masraf */}
+      {token && <MobilOdemeler token={token} />}
 
       {/* Mesai taleplerim */}
       {mesaiTalepleri && mesaiTalepleri.length > 0 && (

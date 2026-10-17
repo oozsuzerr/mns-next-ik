@@ -10,9 +10,15 @@
 //   { olay: "mesai_sonuc", mesai_id }                yönetici fazla mesaiyi onayladı/reddetti (Bearer)
 //   { olay: "cihaz", talep_id, cihaz }               kilitli personel yeni telefon talebi gönderdi (oturumsuz)
 //   { olay: "duyuru", duyuru_id }                     yönetici yeni duyuru yayınladı (Bearer)
+//   { olay: "odeme", token }                         personel mobilden avans/masraf talebi gönderdi
+//   { olay: "odeme_sonuc", odeme_id }                yönetici avans/masrafı onayladı/reddetti/ödedi (Bearer)
 import { bildirimGonder, kullaniciIstemcisi, servisIstemcisi, sorumlular } from "../../../lib/sunucuBildirim";
 import { GUN_ADLARI, haftaGunu, kisaTarih, sureYaz, yerelTarih } from "../../../lib/tarih";
 import { gunEkle } from "../../../lib/vardiyaPlani";
+
+function tlYaz(tutar: number | string): string {
+  return `${Number(tutar).toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL`;
+}
 
 function yanit(durum: number, govde: Record<string, unknown>) {
   return Response.json(govde, { status: durum });
@@ -99,6 +105,36 @@ export async function POST(istek: Request) {
           metin: `${p?.ad ?? ""} ${p?.soyad ?? ""}: ${kisaTarih(t.tarih)} ${t.baslangic_saat.slice(0, 5)}-${t.bitis_saat.slice(0, 5)} (${sureYaz(t.sure_dk)})`,
           adres: "/",
           etiket: "mesai",
+        }
+      );
+      return yanit(200, { gonderilen });
+    }
+
+    // ------------------------------------------------------------ personel avans/masraf talebi
+    if (govde.olay === "odeme") {
+      const token = typeof govde.token === "string" ? govde.token : "";
+      const { data: pid, error } = await servis.rpc("oturum_personel", { p_token: token });
+      if (error || !pid) return yanit(401, { hata: "OTURUM_GECERSIZ" });
+      const { data: t } = await servis
+        .from("odeme_talepleri")
+        .select("tur, tutar, kategori, personeller (ad, soyad, varsayilan_sube_id, firma_id)")
+        .eq("personel_id", pid)
+        .eq("durum", "BEKLEMEDE")
+        .gte("created_at", new Date(Date.now() - 3 * 60 * 1000).toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!t) return yanit(200, { gonderilen: 0 });
+      const p = t.personeller as unknown as { ad: string; soyad: string; varsayilan_sube_id: string | null; firma_id: string } | null;
+      const alicilar = await sorumlular(servis, { firmaId: p?.firma_id, subeId: p?.varsayilan_sube_id }, "odeme");
+      const gonderilen = await bildirimGonder(
+        servis,
+        { kullanicilar: alicilar },
+        {
+          baslik: t.tur === "Avans" ? "Yeni avans talebi" : "Yeni masraf bildirimi",
+          metin: `${p?.ad ?? ""} ${p?.soyad ?? ""}: ${tlYaz(t.tutar)}${t.kategori ? ` (${t.kategori})` : ""}`,
+          adres: "/",
+          etiket: "odeme",
         }
       );
       return yanit(200, { gonderilen });
@@ -212,6 +248,35 @@ export async function POST(istek: Request) {
           metin: `${gunler.join(", ")}${tarihler.length > 3 ? ` ve ${tarihler.length - 3} gün daha` : ""}. Ayrıntı için Vardiyam'a bakın.`,
           adres: "/mobil",
           etiket: "plan",
+        }
+      );
+      return yanit(200, { gonderilen });
+    }
+
+    // ------------------------------------------------------------ avans/masraf sonucu
+    if (govde.olay === "odeme_sonuc") {
+      const { data: yetkili } = await kullanici.rpc("yetkisi_var", { p_yetki: "odeme" });
+      if (yetkili !== true) return yanit(403, { hata: "YETKISIZ" });
+      const { data: t } = await kullanici
+        .from("odeme_talepleri")
+        .select("personel_id, tur, tutar, durum, karar_notu, kaynak")
+        .eq("id", String(govde.odeme_id ?? ""))
+        .maybeSingle();
+      if (!t || t.kaynak !== "mobil" || t.durum === "BEKLEMEDE") return yanit(200, { gonderilen: 0 });
+      const baslik =
+        t.durum === "ODENDI"
+          ? `${t.tur === "Avans" ? "Avansınız" : "Masrafınız"} ödendi`
+          : t.durum === "ONAYLANDI"
+          ? `${t.tur === "Avans" ? "Avans talebiniz" : "Masrafınız"} onaylandı`
+          : `${t.tur === "Avans" ? "Avans talebiniz" : "Masrafınız"} reddedildi`;
+      const gonderilen = await bildirimGonder(
+        servis,
+        { personeller: [t.personel_id] },
+        {
+          baslik,
+          metin: `${tlYaz(t.tutar)}${t.karar_notu ? `. Amir: ${t.karar_notu}` : ""}`,
+          adres: "/mobil",
+          etiket: "odeme-sonuc",
         }
       );
       return yanit(200, { gonderilen });

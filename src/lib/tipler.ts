@@ -142,6 +142,7 @@ export const YETKILER = [
   { anahtar: "cihaz", ad: "Cihaz kilidi", aciklama: "Kayıtlı telefonu sıfırlama", varsayilan: true },
   { anahtar: "pin", ad: "PIN işlemleri", aciklama: "Personele PIN verme ve sıfırlama", varsayilan: false },
   { anahtar: "personel", ad: "Personel düzenleme", aciklama: "Kendi şubesine personel ekleme, pasife alma", varsayilan: false },
+  { anahtar: "odeme", ad: "Avans ve masraf", aciklama: "Avans ve masraf taleplerini onaylama, ödendi işaretleme", varsayilan: false },
   { anahtar: "rapor", ad: "Rapor indirme", aciklama: "Excel/PDF dışa aktarma (T.C. kimlik içerir)", varsayilan: false },
 ] as const;
 

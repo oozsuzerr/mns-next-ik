@@ -4,11 +4,13 @@ import { useState } from "react";
 import type { Personel, Sube, YoneticiBilgisi } from "../../../lib/tipler";
 import DuyurularSekmesi from "./DuyurularSekmesi";
 import ZimmetSekmesi from "./ZimmetSekmesi";
+import OdemeSekmesi from "./OdemeSekmesi";
 
 /** İK işlemleri: her modül kendi verisini kendisi yükler (ana sayfa büyümesin diye) */
 const BOLUMLER = [
   { id: "duyurular", ad: "Duyurular" },
   { id: "zimmet", ad: "Zimmet" },
+  { id: "odeme", ad: "Avans ve masraf" },
 ] as const;
 
 type Bolum = (typeof BOLUMLER)[number]["id"];
@@ -29,7 +31,7 @@ export default function IkSekmesi({
       {BOLUMLER.length > 1 && (
         <div
           className="segment"
-          style={{ gridTemplateColumns: `repeat(${BOLUMLER.length}, minmax(0, 1fr))`, maxWidth: 150 * BOLUMLER.length }}
+          style={{ gridTemplateColumns: `repeat(${BOLUMLER.length}, minmax(0, 1fr))`, maxWidth: 170 * BOLUMLER.length }}
           role="tablist"
           aria-label="İK bölümü"
         >
@@ -42,6 +44,7 @@ export default function IkSekmesi({
       )}
       {bolum === "duyurular" && <DuyurularSekmesi personeller={personeller} subeler={subeler} yonetici={yonetici} />}
       {bolum === "zimmet" && <ZimmetSekmesi personeller={personeller} yonetici={yonetici} />}
+      {bolum === "odeme" && <OdemeSekmesi personeller={personeller} yonetici={yonetici} />}
     </div>
   );
 }

@@ -977,6 +977,19 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     for (const t of mesaiTalepleri) {
       if (t.durum === "ONAYLANDI" && t.tarih.startsWith(seciliAy)) mesaiDk.set(t.personel_id, (mesaiDk.get(t.personel_id) ?? 0) + t.sure_dk);
     }
+    // Avans ve masraf: o ayın tarihli, onaylanmış ya da ödenmiş kayıtları (tablo yoksa boş kalır)
+    const { data: odemeD } = await supabase
+      .from("odeme_talepleri")
+      .select("personel_id, tur, tutar")
+      .in("durum", ["ONAYLANDI", "ODENDI"])
+      .gte("tarih", `${seciliAy}-01`)
+      .lt("tarih", gunEkle(`${seciliAy}-01`, 32).slice(0, 8) + "01");
+    const avans = new Map<string, number>();
+    const masraf = new Map<string, number>();
+    for (const o of (odemeD ?? []) as { personel_id: string; tur: string; tutar: number }[]) {
+      const m = o.tur === "Avans" ? avans : masraf;
+      m.set(o.personel_id, Math.round(((m.get(o.personel_id) ?? 0) + Number(o.tutar)) * 100) / 100);
+    }
     const saat = (dk: number) => Math.round((dk / 60) * 100) / 100;
     const veriler = filtrelenmisPuantaj.map((p, i) => {
       const k = kisiler.get(p.id);
@@ -1013,6 +1026,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         "Hafta Tatili Çalışma (saat)": saat(p.haftaTatiliMesaiDk),
         "Resmi Tatil Çalışma (saat)": saat(p.resmiTatilMesaiDk),
         "Gecikme (saat)": saat(p.gecikmeDk),
+        "Avans (TL, kesilecek)": avans.get(p.id) ?? 0,
+        "Masraf (TL, ödenecek)": masraf.get(p.id) ?? 0,
       };
     });
     const sorun = disariAktar("xlsx", `Bordro ${seciliAy}`, `${`MNS_Next_IK_${bugunTarih}`}_Bordro_Aktarim_${seciliAy}`, veriler);
