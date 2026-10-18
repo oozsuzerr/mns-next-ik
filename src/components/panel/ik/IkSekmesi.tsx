@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Personel, Sube, YoneticiBilgisi } from "../../../lib/tipler";
+import type { MesaiTalebi, Personel, Sube, YoneticiBilgisi } from "../../../lib/tipler";
 import DuyurularSekmesi from "./DuyurularSekmesi";
 import ZimmetSekmesi from "./ZimmetSekmesi";
 import OdemeSekmesi from "./OdemeSekmesi";
@@ -10,10 +10,12 @@ import EgitimSekmesi from "./EgitimSekmesi";
 import PerformansSekmesi from "./PerformansSekmesi";
 import IseAlimSekmesi from "./IseAlimSekmesi";
 import GorevlerSekmesi from "./GorevlerSekmesi";
+import BordroSekmesi from "./BordroSekmesi";
+import type { PuantajSatiri } from "../../../lib/puantaj";
 import { modulAcik, type Modul } from "../../../lib/moduller";
 
 /** İK işlemleri: her modül kendi verisini kendisi yükler (ana sayfa büyümesin diye) */
-const BOLUMLER: readonly { id: string; ad: string; modul: Modul }[] = [
+const BOLUMLER: readonly { id: string; ad: string; modul: Modul; sadeceGenel?: boolean }[] = [
   { id: "gorevler", ad: "Görevler", modul: "gorev" },
   { id: "duyurular", ad: "Duyurular", modul: "duyuru" },
   { id: "zimmet", ad: "Zimmet", modul: "zimmet" },
@@ -22,6 +24,8 @@ const BOLUMLER: readonly { id: string; ad: string; modul: Modul }[] = [
   { id: "egitim", ad: "Eğitim", modul: "egitim" },
   { id: "performans", ad: "Performans", modul: "performans" },
   { id: "isealim", ad: "İşe alım", modul: "isealim" },
+  // Ücretler Özlük'ten okunur: yalnızca genel yönetici
+  { id: "bordro", ad: "Tahmini bordro", modul: "bordro", sadeceGenel: true },
 ] as const;
 
 
@@ -29,13 +33,22 @@ export default function IkSekmesi({
   personeller,
   subeler,
   yonetici,
+  puantaj,
+  mesaiTalepleri,
+  seciliAy,
+  onAyDegis,
 }: {
   personeller: Personel[];
   subeler: Sube[];
   yonetici: YoneticiBilgisi;
+  /** Tahmini bordro için seçili ayın puantajı ve fazla mesai talepleri */
+  puantaj: PuantajSatiri[];
+  mesaiTalepleri: MesaiTalebi[];
+  seciliAy: string;
+  onAyDegis: (ay: string) => void;
 }) {
   // Yalnızca firmanın paketinde açık modüller
-  const acik = BOLUMLER.filter((b) => modulAcik(yonetici.moduller, b.modul));
+  const acik = BOLUMLER.filter((b) => modulAcik(yonetici.moduller, b.modul) && (!b.sadeceGenel || yonetici.rol === "GENEL"));
   const [secilen, setBolum] = useState<string | null>(null);
   const bolum = acik.find((b) => b.id === secilen)?.id ?? acik[0]?.id ?? null;
 
@@ -69,6 +82,9 @@ export default function IkSekmesi({
       {bolum === "kontrol" && <KontrolListeleriSekmesi personeller={personeller} yonetici={yonetici} />}
       {bolum === "egitim" && <EgitimSekmesi personeller={personeller} yonetici={yonetici} />}
       {bolum === "performans" && <PerformansSekmesi personeller={personeller} yonetici={yonetici} />}
+      {bolum === "bordro" && (
+        <BordroSekmesi puantaj={puantaj} mesaiTalepleri={mesaiTalepleri} seciliAy={seciliAy} onAyDegis={onAyDegis} yonetici={yonetici} />
+      )}
       {bolum === "isealim" && <IseAlimSekmesi personeller={personeller} subeler={subeler} yonetici={yonetici} />}
     </div>
   );

@@ -10,6 +10,7 @@ export const MODULLER = [
   { anahtar: "performans", ad: "Performans", aciklama: "Dönemsel performans değerlendirme" },
   { anahtar: "isealim", ad: "İşe alım", aciklama: "İlan, aday ve görüşme takibi" },
   { anahtar: "gorev", ad: "Görevler", aciklama: "Personele görev verme, mobilden tamamlama" },
+  { anahtar: "bordro", ad: "Tahmini bordro", aciklama: "Brüt/net ön hesap, mesai ücretleri ve çarpanları" },
 ] as const;
 
 export type Modul = (typeof MODULLER)[number]["anahtar"];

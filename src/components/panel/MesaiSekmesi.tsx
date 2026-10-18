@@ -87,6 +87,7 @@ export default function MesaiSekmesi({
   subeFiltre,
   onAyDegis,
   onDurum,
+  brutHesap,
 }: {
   talepler: MesaiTalebi[];
   personeller: Personel[];
@@ -96,6 +97,8 @@ export default function MesaiSekmesi({
   onAyDegis: (ay: string) => void;
   /** Verilmezse (mesai yetkisi yok) talepler salt okunur */
   onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
+  /** Tahmini brüt mesai ücreti (genel yönetici, bordro modülü açık; ücret girilmemişse null) */
+  brutHesap?: (personelId: string, dk: number) => number | null;
 }) {
   const [sadeceOnayli, setSadeceOnayli] = useState(true);
   const [kararFiltre, setKararFiltre] = useState<"TUMU" | "ONAYLANDI" | "REDDEDILDI">("TUMU");
@@ -129,6 +132,9 @@ export default function MesaiSekmesi({
   }, [talepler, personeller, seciliAy, subeFiltre, sadeceOnayli]);
 
   const genelToplam = ozet.reduce((a, k) => a + k.toplamDk, 0);
+  const brutler = brutHesap ? ozet.map((k) => brutHesap(k.id, k.toplamDk)) : [];
+  const brutToplam = brutler.reduce<number>((a, b) => a + (b ?? 0), 0);
+  const tl = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // Seçili ayda karar verilmiş (onaylanan ve reddedilen) bütün mesailer, en yeni tarih üstte
   const kararlilar = talepler
@@ -187,6 +193,12 @@ export default function MesaiSekmesi({
             <p className="m2 text-xs font-semibold">Mesai yapan kişi</p>
             <p className="baslik-font sayi m1 mt-0.5 text-xl">{ozet.length}</p>
           </div>
+          {brutHesap && (
+            <div>
+              <p className="m2 text-xs font-semibold">Tahmini brüt mesai ücreti</p>
+              <p className="baslik-font sayi m1 mt-0.5 text-xl">{tl(brutToplam)} TL</p>
+            </div>
+          )}
         </div>
         <div className="panel overflow-hidden">
           {ozet.length === 0 ? (
@@ -203,7 +215,14 @@ export default function MesaiSekmesi({
                           {k.sicil}, {k.gun} gün
                         </span>
                       </span>
-                      <span className="baslik-font sayi m1 text-lg">{saatDakika(k.toplamDk)}</span>
+                      <span className="text-right">
+                        <span className="baslik-font sayi m1 block text-lg">{saatDakika(k.toplamDk)}</span>
+                        {brutHesap && (
+                          <span className="m3 sayi block text-xs">
+                            {brutler[ozet.indexOf(k)] == null ? "ücret girilmemiş" : `≈ ${tl(brutler[ozet.indexOf(k)]!)} TL brüt`}
+                          </span>
+                        )}
+                      </span>
                     </summary>
                     <ul className="m2 space-y-1.5 px-4 pb-3 text-sm sm:px-5">
                       {k.liste.map((t) => (

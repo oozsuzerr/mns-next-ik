@@ -37,6 +37,8 @@ import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import SubelerSekmesi from "../components/panel/SubelerSekmesi";
 import IkSekmesi from "../components/panel/ik/IkSekmesi";
+import { fazlaMesaiBrut, useBordroVerisi } from "../components/panel/ik/bordroVerisi";
+import { modulAcik } from "../lib/moduller";
 import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
 import OzlukKarti from "../components/panel/OzlukKarti";
 import VardiyaSekmesi from "../components/panel/VardiyaSekmesi";
@@ -449,6 +451,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const genel = yetki.rol === "GENEL";
   /** Genel yönetici her şeye, şube müdürü yalnızca kendisine verilen yetkilere sahiptir */
   const yetkili = (y: Yetki) => genel || yetki.yetkiler.includes(y);
+  // Fazla mesai sekmesinde tahmini brüt mesai ücreti: ücretler yalnızca genel yöneticiye açık
+  const bordroVerisi = useBordroVerisi(genel && modulAcik(yetki.moduller, "bordro"));
 
   // Panel telefona "ana ekrana ekle" ile eklenirken personel uygulaması (/mobil) yerine
   // panel açılsın diye bu sayfada ayrı uygulama tanımı kullanılır
@@ -1549,6 +1553,11 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             seciliAy={seciliAy}
             subeFiltre={seciliSubeFiltre}
             onAyDegis={ayDegistir}
+            brutHesap={
+              bordroVerisi.hazir && !bordroVerisi.kurulmamis
+                ? (pid, dk) => fazlaMesaiBrut(bordroVerisi, pid, dk, Number(seciliAy.slice(5, 7)))
+                : undefined
+            }
             onDurum={
               yetkili("mesai")
                 ? (id, durum) => {
@@ -1630,7 +1639,17 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           </div>
         )}
 
-        {aktifSekme === "ik" && <IkSekmesi personeller={personeller} subeler={subeler} yonetici={yetki} />}
+        {aktifSekme === "ik" && (
+          <IkSekmesi
+            personeller={personeller}
+            subeler={subeler}
+            yonetici={yetki}
+            puantaj={filtrelenmisPuantaj}
+            mesaiTalepleri={mesaiTalepleri}
+            seciliAy={seciliAy}
+            onAyDegis={ayDegistir}
+          />
+        )}
 
         {aktifSekme === "subeler" && genel && (
           <SubelerSekmesi subeler={subeler} personeller={personeller} duzenlenebilir={genel} onKayit={yenile} />
