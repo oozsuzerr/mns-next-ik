@@ -36,7 +36,7 @@ import TaleplerSekmesi from "../components/panel/TaleplerSekmesi";
 import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import SubelerSekmesi from "../components/panel/SubelerSekmesi";
-import IkSekmesi from "../components/panel/ik/IkSekmesi";
+import IkSekmesi, { ikBolumleri } from "../components/panel/ik/IkSekmesi";
 import { fazlaMesaiBrut, useBordroVerisi } from "../components/panel/ik/bordroVerisi";
 import { modulAcik } from "../lib/moduller";
 import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
@@ -499,6 +499,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [digerAcik, setDigerAcik] = useState(false);
   const [sifreAcik, setSifreAcik] = useState(false);
   const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
+  // Yan menüden seçilen İK bölümü ve açık/kapalı menü grupları (kullanıcı açıp kapatmadıysa etkin öğenin grubu açıktır)
+  const [ikBolum, setIkBolum] = useState<string | null>(null);
+  const [grupAcik, setGrupAcik] = useState<Record<string, boolean>>({});
 
   // -------------------------------------------------------------------
   // Veri çekme
@@ -1210,7 +1213,47 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const altAna = gorunenSekmeler.filter((s) => ALT_CUBUK.includes(s.id));
   const altDiger = gorunenSekmeler.filter((s) => !ALT_CUBUK.includes(s.id));
   const digerSayac = altDiger.reduce((t, s) => t + (sekmeSayaci[s.id] ?? 0), 0);
-  const aktifBaslik = SEKMELER.find((s) => s.id === aktifSekme)?.etiket ?? "";
+  // Yan menü: tek öğeler ve açılır kapanır gruplar
+  const sekmeVar = (id: Sekme) => gorunenSekmeler.some((s) => s.id === id);
+  const sekmeBilgi = (id: Sekme) => SEKMELER.find((s) => s.id === id)!;
+  const ikListesi = sekmeVar("ik") ? ikBolumleri(yetki) : [];
+  const etkinIk = ikListesi.find((b) => b.id === ikBolum)?.id ?? ikListesi[0]?.id ?? null;
+  type MenuOgesi = { anahtar: string; etiket: string; ikon: IkonAdi; sekme: Sekme; alt?: string; sayac?: number };
+  const oge = (id: Sekme, etiket?: string, alt?: string): MenuOgesi => ({
+    anahtar: alt ? `${id}:${alt}` : id,
+    etiket: etiket ?? sekmeBilgi(id).etiket,
+    ikon: sekmeBilgi(id).ikon,
+    sekme: id,
+    alt,
+    sayac: alt ? undefined : sekmeSayaci[id],
+  });
+  type MenuGrubu = { id: string; etiket: string | null; ikon: IkonAdi; ogeler: MenuOgesi[] };
+  const tumGruplar: MenuGrubu[] = [
+    { id: "bakis", etiket: null, ikon: "bakis", ogeler: [oge("bakis")] },
+    { id: "pdks", etiket: "PDKS", ikon: "puantaj", ogeler: [oge("puantaj"), oge("genel"), oge("vardiya")] },
+    { id: "talep", etiket: "Talepler", ikon: "talepler", ogeler: [oge("talepler"), oge("mesai")] },
+    {
+      id: "personel",
+      etiket: "Personel işlemleri",
+      ikon: "personel",
+      ogeler: [
+        oge("personel", "Personel listesi", "personel"),
+        ...(genel ? [oge("personel", "Panel kullanıcıları", "kullanicilar"), oge("personel", "İşlem geçmişi", "gecmis")] : []),
+        ...(sekmeVar("subeler") ? [oge("subeler")] : []),
+      ],
+    },
+    { id: "ik", etiket: "İK işlemleri", ikon: "ik", ogeler: ikListesi.map((b) => ({ ...oge("ik", b.ad, b.id), ikon: "ik" as IkonAdi })) },
+  ];
+  const menuGruplari = tumGruplar.filter((g) => g.ogeler.length > 0);
+  const ogeEtkin = (o: MenuOgesi) =>
+    aktifSekme === o.sekme && (o.alt === undefined || (o.sekme === "personel" ? personelGorunum === o.alt : o.sekme === "ik" ? etkinIk === o.alt : true));
+  function ogeSec(o: MenuOgesi) {
+    setAktifSekme(o.sekme);
+    if (o.sekme === "personel" && o.alt) setPersonelGorunum(o.alt as "personel" | "kullanicilar" | "gecmis");
+    if (o.sekme === "ik" && o.alt) setIkBolum(o.alt);
+  }
+  const etkinOge = menuGruplari.flatMap((g) => g.ogeler).find(ogeEtkin);
+  const aktifBaslik = etkinOge?.etiket ?? SEKMELER.find((s) => s.id === aktifSekme)?.etiket ?? "";
 
   // -------------------------------------------------------------------
   // Görünüm
@@ -1229,20 +1272,50 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           </div>
         </div>
 
-        <nav className="flex flex-col gap-1" aria-label="Ana menü">
-          {gorunenSekmeler.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className="nav-oge"
-              data-aktif={aktifSekme === s.id}
-              onClick={() => setAktifSekme(s.id)}
-            >
-              <Ikon ad={s.ikon} />
-              {s.etiket}
-              {(sekmeSayaci[s.id] ?? 0) > 0 && <span className="nav-sayac">{sekmeSayaci[s.id]}</span>}
-            </button>
-          ))}
+        <nav className="-mx-1 flex flex-col gap-1 overflow-y-auto px-1" aria-label="Ana menü">
+          {menuGruplari.map((g) => {
+            if (!g.etiket) {
+              const o = g.ogeler[0];
+              return (
+                <button key={g.id} type="button" className="nav-oge" data-aktif={ogeEtkin(o)} onClick={() => ogeSec(o)}>
+                  <Ikon ad={o.ikon} />
+                  {o.etiket}
+                  {(o.sayac ?? 0) > 0 && <span className="nav-sayac">{o.sayac}</span>}
+                </button>
+              );
+            }
+            const icinde = g.ogeler.some(ogeEtkin);
+            const acik = grupAcik[g.id] ?? icinde;
+            const toplam = g.ogeler.reduce((t, o) => t + (o.sayac ?? 0), 0);
+            return (
+              <div key={g.id}>
+                <button
+                  type="button"
+                  className="nav-oge"
+                  data-grup-etkin={icinde}
+                  aria-expanded={acik}
+                  onClick={() => setGrupAcik({ ...grupAcik, [g.id]: !acik })}
+                >
+                  <Ikon ad={g.ikon} />
+                  {g.etiket}
+                  {!acik && toplam > 0 && <span className="nav-sayac">{toplam}</span>}
+                  <span className={`nav-ok ${!acik && toplam > 0 ? "" : "ml-auto"}`} data-acik={acik}>
+                    <Ikon ad="sag" boyut={15} />
+                  </span>
+                </button>
+                {acik && (
+                  <div className="nav-alt">
+                    {g.ogeler.map((o) => (
+                      <button key={o.anahtar} type="button" className="nav-oge nav-alt-oge" data-aktif={ogeEtkin(o)} onClick={() => ogeSec(o)}>
+                        {o.etiket}
+                        {(o.sayac ?? 0) > 0 && <span className="nav-sayac">{o.sayac}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className="mt-auto space-y-1 pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.1)" }}>
@@ -1589,37 +1662,6 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
         {aktifSekme === "personel" && (
           <div className="space-y-4">
-            {genel && (
-              <div className="segment segment-3" style={{ maxWidth: 460 }} role="tablist" aria-label="Personel bölümü">
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={personelGorunum === "personel"}
-                  data-aktif={personelGorunum === "personel"}
-                  onClick={() => setPersonelGorunum("personel")}
-                >
-                  Personel
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={personelGorunum === "kullanicilar"}
-                  data-aktif={personelGorunum === "kullanicilar"}
-                  onClick={() => setPersonelGorunum("kullanicilar")}
-                >
-                  Panel kullanıcıları
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={personelGorunum === "gecmis"}
-                  data-aktif={personelGorunum === "gecmis"}
-                  onClick={() => setPersonelGorunum("gecmis")}
-                >
-                  İşlem geçmişi
-                </button>
-              </div>
-            )}
             {genel && personelGorunum === "kullanicilar" ? (
               <PanelKullanicilari subeler={subeler} />
             ) : genel && personelGorunum === "gecmis" ? (
@@ -1628,6 +1670,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               <PersonelSekmesi
                 personeller={filtrelenmisPersoneller}
                 bakiyeler={bakiyeler}
+                izinliIdler={new Set(bugunOzet.izinli.map((p) => p.id))}
+                devamsizIdler={new Set(bugunOzet.gelmedi.map((p) => p.id))}
+                iceridekiIdler={new Set(bugunOzet.iceride.map((p) => p.id))}
                 onIzinBilgileri={(p) => setForm({ tur: "izinBilgi", hedef: p })}
                 onOzluk={genel ? (p) => setForm({ tur: "ozluk", hedef: p }) : undefined}
                 onYeni={yetkili("personel") ? () => setForm({ tur: "personel" }) : undefined}
@@ -1648,6 +1693,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             mesaiTalepleri={mesaiTalepleri}
             seciliAy={seciliAy}
             onAyDegis={ayDegistir}
+            bolum={etkinIk}
           />
         )}
 
@@ -1750,7 +1796,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           aria-haspopup="dialog"
         >
           <Ikon ad="daha" boyut={21} />
-          {altDiger.find((s) => s.id === aktifSekme)?.kisa ?? "Diğer"}
+          {altDiger.some((s) => s.id === aktifSekme) ? (etkinOge?.etiket.split(" ")[0] ?? "Diğer") : "Diğer"}
           {digerSayac > 0 && <span className="alt-sayac">{digerSayac}</span>}
         </button>
       </nav>
@@ -1758,25 +1804,35 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       {/* Telefonda "Diğer": alt çubuğa sığmayan sekmeler ve yan menüdeki bağlantılar */}
       {digerAcik && (
         <Modal onKapat={() => setDigerAcik(false)} baslik="Diğer bölümler">
-          <div className="grid grid-cols-2 gap-3">
-            {altDiger.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className="hizli-kutu"
-                data-aktif={aktifSekme === s.id}
-                onClick={() => {
-                  setAktifSekme(s.id);
-                  setDigerAcik(false);
-                }}
-              >
-                <span className="flex items-center justify-between">
-                  <Ikon ad={s.ikon} boyut={20} />
-                  {(sekmeSayaci[s.id] ?? 0) > 0 && <span className="baslik-font sayi text-xl">{sekmeSayaci[s.id]}</span>}
-                </span>
-                <span className="text-sm font-semibold">{s.etiket}</span>
-              </button>
-            ))}
+          <div className="space-y-4">
+            {menuGruplari
+              .map((g) => ({ ...g, ogeler: g.ogeler.filter((o) => o.alt !== undefined || !ALT_CUBUK.includes(o.sekme)) }))
+              .filter((g) => g.ogeler.length > 0)
+              .map((g) => (
+                <div key={g.id}>
+                  {g.etiket && <p className="m3 mb-2 text-xs font-semibold uppercase tracking-wide">{g.etiket}</p>}
+                  <div className="grid grid-cols-2 gap-3">
+                    {g.ogeler.map((o) => (
+                      <button
+                        key={o.anahtar}
+                        type="button"
+                        className="hizli-kutu"
+                        data-aktif={ogeEtkin(o)}
+                        onClick={() => {
+                          ogeSec(o);
+                          setDigerAcik(false);
+                        }}
+                      >
+                        <span className="flex items-center justify-between">
+                          <Ikon ad={o.ikon} boyut={20} />
+                          {(o.sayac ?? 0) > 0 && <span className="baslik-font sayi text-xl">{o.sayac}</span>}
+                        </span>
+                        <span className="text-sm font-semibold">{o.etiket}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
           </div>
           <div className="kenar-ust mt-4 space-y-2 pt-4">
             {yetki.sistem && (

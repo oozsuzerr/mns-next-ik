@@ -28,6 +28,11 @@ const BOLUMLER: readonly { id: string; ad: string; modul: Modul; sadeceGenel?: b
   { id: "bordro", ad: "Tahmini bordro", modul: "bordro", sadeceGenel: true },
 ] as const;
 
+/** Yöneticinin görebildiği İK bölümleri (firma paketi ve rol) */
+export function ikBolumleri(yonetici: YoneticiBilgisi) {
+  return BOLUMLER.filter((b) => modulAcik(yonetici.moduller, b.modul) && (!b.sadeceGenel || yonetici.rol === "GENEL"));
+}
+
 
 export default function IkSekmesi({
   personeller,
@@ -37,6 +42,7 @@ export default function IkSekmesi({
   mesaiTalepleri,
   seciliAy,
   onAyDegis,
+  bolum: disBolum,
 }: {
   personeller: Personel[];
   subeler: Sube[];
@@ -46,15 +52,17 @@ export default function IkSekmesi({
   mesaiTalepleri: MesaiTalebi[];
   seciliAy: string;
   onAyDegis: (ay: string) => void;
+  /** Verilirse bölüm yan menüden seçilir ve üstteki bölüm çubuğu gizlenir */
+  bolum?: string | null;
 }) {
   // Yalnızca firmanın paketinde açık modüller
-  const acik = BOLUMLER.filter((b) => modulAcik(yonetici.moduller, b.modul) && (!b.sadeceGenel || yonetici.rol === "GENEL"));
+  const acik = ikBolumleri(yonetici);
   const [secilen, setBolum] = useState<string | null>(null);
-  const bolum = acik.find((b) => b.id === secilen)?.id ?? acik[0]?.id ?? null;
+  const bolum = acik.find((b) => b.id === (disBolum !== undefined ? disBolum : secilen))?.id ?? acik[0]?.id ?? null;
 
   return (
     <div className="space-y-4">
-      {acik.length > 1 && (
+      {disBolum === undefined && acik.length > 1 && (
         // Telefonda sığmazsa yana kayar
         <div className="-mx-1 overflow-x-auto px-1 pb-1">
           <div

@@ -444,6 +444,29 @@ textarea {
   background: rgba(255, 255, 255, 0.13);
   color: #fff;
 }
+.nav-oge[data-grup-etkin="true"] {
+  color: #fff;
+}
+.nav-ok {
+  display: inline-flex;
+  opacity: 0.6;
+  transition: transform 0.15s;
+}
+.nav-ok[data-acik="true"] {
+  transform: rotate(90deg);
+}
+.nav-alt {
+  margin: 2px 0 6px 21px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-alt-oge {
+  padding: 8px 10px;
+  font-size: 13.5px;
+}
 .nav-sayac {
   margin-left: auto;
   min-width: 20px;
