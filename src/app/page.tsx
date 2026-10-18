@@ -53,7 +53,7 @@ import MesaiSekmesi from "../components/panel/MesaiSekmesi";
 import CihazTalepleriSekmesi from "../components/panel/CihazTalepleriSekmesi";
 import BildirimDugmesi from "../components/BildirimDugmesi";
 import { SifreDegistirFormu, SifremiUnuttumFormu } from "../components/SifreFormlari";
-import { izinFormuYazdir, izinKartiYazdir } from "../lib/izinBelgeleri";
+import { hakedisYillari, izinFormuYazdir, izinKartiYazdir, yillikKullanimlar } from "../lib/izinBelgeleri";
 import { olayBildir } from "../lib/bildirim";
 import {
   CikisEksikListesi,
@@ -89,6 +89,8 @@ const SEKMELER: { id: Sekme; etiket: string; kisa: string; ikon: IkonAdi }[] = [
 /** Rapor verisinin kaynağı: seçili ay yerine bir tarih aralığı (şube filtresi uygulanmış) */
 interface RaporKaynagi {
   donem: string;
+  /** Aralığın vardiya planı (vardiya planı raporu için) */
+  planlar: PlanSatiri[];
   hareketler: Hareket[];
   puantaj: PuantajSatiri[];
   mesai: MesaiTalebi[];
@@ -879,6 +881,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         baslik: `Fazla Mesai (${donem})`,
         dosyaAdi: `${ek}_FazlaMesai_${donem}`,
         veriler: dMesai
+          .filter((t) => t.durum === "ONAYLANDI")
           .filter((t) => seciliSubeFiltre === "TUMU" || t.personeller?.varsayilan_sube_id === seciliSubeFiltre)
           .sort((a, b) => a.tarih.localeCompare(b.tarih))
           .map((t, i) => ({
@@ -899,9 +902,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
     if (sekme === "talepler") {
       return {
-        baslik: k ? `İzin ve Rapor Talepleri (${donem})` : "İzin ve Rapor Talepleri",
+        baslik: k ? `Onaylı İzin ve Raporlar (${donem})` : "Onaylı İzin ve Raporlar",
         dosyaAdi: k ? `${ek}_Izinler_${donem}` : `${ek}_Izinler`,
-        veriler: dIzin.map((iz, i) => ({
+        veriler: dIzin.filter((iz) => !iz.durum || iz.durum === "ONAYLANDI").map((iz, i) => ({
           Sıra: i + 1,
           "Sicil No": iz.personeller?.sicil_no || "-",
           "Ad Soyad": `${iz.personeller?.ad || ""} ${iz.personeller?.soyad || ""}`.trim(),
@@ -1115,18 +1118,22 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         baslik: `Geç Kalma ve Devamsızlık (${donem})`,
         dosyaAdi: `${ek}_Gecikme_${donem}`,
         veriler: dPuantaj
-          .filter((x) => x.gecikmeDk > 0 || x.devamsizGunler > 0 || x.eksikGunler > 0)
-          .sort((a, b) => b.gecikmeDk - a.gecikmeDk)
+          .filter((x) => x.gecikmeDk > 0 || x.erkenCikisDk > 0 || x.devamsizGunler > 0 || x.eksikGunler > 0)
+          .sort((a, b) => b.gecikmeDk + b.erkenCikisDk - (a.gecikmeDk + a.erkenCikisDk))
           .map((x, i) => ({
             Sıra: i + 1,
             "Sicil No": x.sicil_no,
             "Ad Soyad": x.adSoyad,
+            Departman: x.departman,
             Şube: x.subeAdi,
+            "Geç Giriş (gün)": x.gecGirisGun,
             "Toplam Gecikme (sa:dk)": x.gecikmeDk,
+            "Erken Çıkış (gün)": x.erkenCikisGun,
+            "Toplam Erken Çıkış (sa:dk)": x.erkenCikisDk,
             "Devamsız Gün": x.devamsizGunler,
             "Eksik Hareketli Gün": x.eksikGunler,
           })),
-        sureSutunlari: ["Toplam Gecikme (sa:dk)"],
+        sureSutunlari: ["Toplam Gecikme (sa:dk)", "Toplam Erken Çıkış (sa:dk)"],
       };
     }
     if (kod === "izinBakiye") {
@@ -1153,6 +1160,153 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             };
           }),
       };
+    }
+    // Dönemin ilk ve son günü (aralık ya da seçili ay)
+    const [dBas, dBit] = k ? [k.donem.slice(0, 10), k.donem.slice(11, 21)] : [`${seciliAy}-01`, gunEkle(yerelTarih(ayAraligi(seciliAy).son), -1)];
+    const kisi = new Map(personeller.map((x) => [x.id, x]));
+    const gorunenKisi = new Set(filtrelenmisPersoneller.map((x) => x.id));
+    const isGunuSay = (bas: string, bit: string) => {
+      let n = 0;
+      for (let t = bas; t <= bit; t = gunEkle(t, 1)) {
+        const iso = new Date(`${t}T12:00:00Z`).getUTCDay() || 7;
+        if (!isTakvimi.calismayanGunler.includes(iso) && !isTakvimi.tatiller.has(t)) n++;
+      }
+      return n;
+    };
+    const onayliIzinler = izinler.filter(
+      (iz) => (!iz.durum || iz.durum === "ONAYLANDI") && iz.baslangic_tarihi <= dBit && iz.bitis_tarihi >= dBas && gorunenKisi.has(iz.personel_id)
+    );
+    if (kod === "izinOzet") {
+      const grup = new Map<string, { pid: string; tur: string; adet: number; isGunu: number; takvim: number; dusulen: number }>();
+      for (const iz of onayliIzinler.filter((x) => x.izin_turu !== "Saatlik İzin")) {
+        const bas = iz.baslangic_tarihi > dBas ? iz.baslangic_tarihi : dBas;
+        const bit = iz.bitis_tarihi < dBit ? iz.bitis_tarihi : dBit;
+        const anahtar = `${iz.personel_id}|${iz.izin_turu}`;
+        const g = grup.get(anahtar) ?? { pid: iz.personel_id, tur: iz.izin_turu, adet: 0, isGunu: 0, takvim: 0, dusulen: 0 };
+        g.adet++;
+        g.isGunu += isGunuSay(bas, bit);
+        g.takvim += Math.round((Date.parse(bit) - Date.parse(bas)) / 86400000) + 1;
+        if (iz.baslangic_tarihi >= dBas && iz.bitis_tarihi <= dBit) g.dusulen += Number(iz.gun_sayisi ?? 0);
+        grup.set(anahtar, g);
+      }
+      return {
+        baslik: `Personel İzin Raporu (${donem})`,
+        dosyaAdi: `${ek}_Izin_Ozeti_${donem}`,
+        veriler: [...grup.values()]
+          .sort((a, b) => (kisi.get(a.pid)?.ad ?? "").localeCompare(kisi.get(b.pid)?.ad ?? "", "tr") || a.tur.localeCompare(b.tur, "tr"))
+          .map((g, i) => {
+            const x = kisi.get(g.pid);
+            return {
+              Sıra: i + 1,
+              "Sicil No": x?.sicil_no ?? "",
+              "Ad Soyad": x ? `${x.ad} ${x.soyad}` : "",
+              Departman: x?.departman ?? "",
+              Ünvan: x?.unvan ?? "",
+              Şube: x?.subeler?.ad ?? "",
+              "İzin Türü": g.tur,
+              "İzin Sayısı": g.adet,
+              "İş Günü (dönemde)": g.isGunu,
+              "Takvim Günü (dönemde)": g.takvim,
+            };
+          }),
+      };
+    }
+    if (kod === "saatlikIzin") {
+      const satirlar: Satir[] = [];
+      const sirali = onayliIzinler
+        .filter((x) => x.izin_turu === "Saatlik İzin")
+        .sort((a, b) => (kisi.get(a.personel_id)?.ad ?? "").localeCompare(kisi.get(b.personel_id)?.ad ?? "", "tr") || a.baslangic_tarihi.localeCompare(b.baslangic_tarihi));
+      const saatOf = (iz: (typeof sirali)[number]) => {
+        if (!iz.baslangic_saat || !iz.bitis_saat) return 0;
+        const [a1, a2] = iz.baslangic_saat.split(":").map(Number);
+        const [b1, b2] = iz.bitis_saat.split(":").map(Number);
+        return Math.max(0, b1 * 60 + b2 - (a1 * 60 + a2));
+      };
+      let onceki = "";
+      let toplam = 0;
+      const kapat = () => {
+        if (!onceki) return;
+        const x = kisi.get(onceki);
+        satirlar.push({ Sıra: "", "Sicil No": x?.sicil_no ?? "", "Ad Soyad": `${x ? `${x.ad} ${x.soyad}` : ""} toplamı`, Tarih: "", Saat: "", "Süre (sa:dk)": toplam, Açıklama: "" });
+      };
+      sirali.forEach((iz, i) => {
+        if (iz.personel_id !== onceki) {
+          kapat();
+          onceki = iz.personel_id;
+          toplam = 0;
+        }
+        const x = kisi.get(iz.personel_id);
+        const dk = saatOf(iz);
+        toplam += dk;
+        satirlar.push({
+          Sıra: i + 1,
+          "Sicil No": x?.sicil_no ?? "",
+          "Ad Soyad": x ? `${x.ad} ${x.soyad}` : "",
+          Tarih: iz.baslangic_tarihi,
+          Saat: `${(iz.baslangic_saat ?? "").slice(0, 5)}-${(iz.bitis_saat ?? "").slice(0, 5)}`,
+          "Süre (sa:dk)": dk,
+          Açıklama: iz.aciklama ?? "",
+        });
+      });
+      kapat();
+      return { baslik: `Saatlik İzin Raporu (${donem})`, dosyaAdi: `${ek}_Saatlik_Izin_${donem}`, veriler: satirlar, sureSutunlari: ["Süre (sa:dk)"] };
+    }
+    if (kod === "izinDonem") {
+      const satirlar: Satir[] = [];
+      for (const x of filtrelenmisPersoneller.filter((p) => p.aktif && p.ise_giris_tarihi)) {
+        const hak = hakedisYillari(x, bugunTarih).filter((h) => h.sayildi);
+        const kull = yillikKullanimlar(x, izinler);
+        const kullanim = (bas: string, bit: string | null) =>
+          kull.filter((iz) => iz.baslangic_tarihi >= bas && (!bit || iz.baslangic_tarihi < bit)).reduce((t, iz) => t + Number(iz.gun_sayisi ?? 0), 0);
+        let bakiye = Number(x.devreden_izin_gun ?? 0);
+        const ortak = { "Sicil No": x.sicil_no, "Ad Soyad": `${x.ad} ${x.soyad}`, Departman: x.departman ?? "", Şube: x.subeler?.ad ?? "" };
+        const ilk = hak[0]?.tarih ?? null;
+        const once = kullanim("0000-00-00", ilk);
+        if (bakiye || once) {
+          const devir = bakiye;
+          bakiye -= once;
+          satirlar.push({ ...ortak, Dönem: "Devir / hak öncesi", Başlangıç: x.devir_tarihi ?? x.ise_giris_tarihi ?? "", Bitiş: ilk ?? "", Devreden: devir, "Hak Edilen": 0, Kullanılan: once, Kalan: bakiye, Durum: ilk ? "Kapandı" : "Devam ediyor" });
+        }
+        hak.forEach((h, i) => {
+          const sonraki = hak[i + 1]?.tarih ?? null;
+          const devir = bakiye;
+          const kullanilan = kullanim(h.tarih, sonraki);
+          bakiye = bakiye + h.gun - kullanilan;
+          satirlar.push({ ...ortak, Dönem: `${h.yil}. hizmet yılı`, Başlangıç: h.tarih, Bitiş: sonraki ? gunEkle(sonraki, -1) : "", Devreden: devir, "Hak Edilen": h.gun, Kullanılan: kullanilan, Kalan: bakiye, Durum: sonraki ? "Kapandı" : "Devam ediyor" });
+        });
+      }
+      return {
+        baslik: `Yıllık İzin Dönemleri (${bugunTarih})`,
+        dosyaAdi: `${ek}_Yillik_Izin_Donemleri`,
+        veriler: satirlar.map((x, i) => ({ Sıra: i + 1, ...x })),
+      };
+    }
+    if (kod === "vardiyaPlan") {
+      const harita = planHaritasi(k?.planlar ?? planlar);
+      const vh = new Map(vardiyalar.map((v) => [v.id, v]));
+      const satirlar: Satir[] = [];
+      for (let t = dBas; t <= dBit; t = gunEkle(t, 1)) {
+        const tatil = resmiTatiller.find((x) => x.tarih === t && !x.yarim_gun);
+        for (const x of filtrelenmisPersoneller) {
+          if (!x.aktif && (!x.cikis_tarihi || x.cikis_tarihi < t)) continue;
+          if (x.ise_giris_tarihi && x.ise_giris_tarihi > t) continue;
+          const gp = gunPlani(harita.get(`${x.id}|${t}`), t, x.vardiyalar ?? vardiyalar[0] ?? null, (id) => vh.get(id), ayarlar.calismayan_gunler);
+          const v = gp.vardiyalar;
+          satirlar.push({
+            Tarih: t,
+            Gün: ["Paz", "Pzt", "Sal", "Çar", "Per", "Cum", "Cmt"][new Date(`${t}T12:00:00Z`).getUTCDay()],
+            "Sicil No": x.sicil_no,
+            "Ad Soyad": `${x.ad} ${x.soyad}`,
+            Departman: x.departman ?? "",
+            Şube: x.subeler?.ad ?? "",
+            Vardiya: tatil ? "-" : gp.tatil ? "-" : v.map((y) => y.ad).join(" + ") || "-",
+            Saat: tatil || gp.tatil ? "" : v.map((y) => `${y.baslangic_saat.slice(0, 5)}-${y.bitis_saat.slice(0, 5)}`).join(", "),
+            "Gün Türü": tatil ? `Resmî tatil (${tatil.ad})` : gp.tatil ? "Hafta tatili" : "Çalışma günü",
+            Kaynak: gp.kaynak === "plan" ? "Vardiya planı" : "Varsayılan vardiya",
+          });
+        }
+      }
+      return { baslik: `Vardiya Planı (${donem})`, dosyaAdi: `${ek}_Vardiya_Plani_${donem}`, veriler: satirlar };
     }
     if (kod === "cetvel") {
       return {
@@ -1239,6 +1393,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     const kisiSubesi = new Map(personeller.map((x) => [x.id, x.varsayilan_sube_id]));
     return {
       donem: `${bas}_${bit}`,
+      planlar: plan,
       hareketler: har
         .filter((h) => {
           const t = yerelTarih(h.created_at);

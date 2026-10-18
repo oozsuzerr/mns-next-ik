@@ -9,6 +9,7 @@ import { ayAdi, kisaTarih, yerelTarih } from "../../lib/tarih";
 import { disariAktar, type Bicim, type Satir } from "../../lib/disaAktar";
 import { modulAcik, type Modul } from "../../lib/moduller";
 import { tutanakYazdir, type Zimmet } from "./ik/ZimmetSekmesi";
+import { ayrintilar, ozet as islemOzeti, TABLOLAR, type Kayit } from "./IslemGecmisi";
 import { Ikon, Modal, useBildirim, type IkonAdi } from "../ui";
 
 export interface RaporVerisi {
@@ -83,6 +84,25 @@ export default function RaporlarSekmesi({
     return p ? `${p.ad} ${p.soyad}` : "-";
   };
   const sicil = (id: string) => kisiler.get(id)?.sicil_no ?? "-";
+  // Departman / ünvan filtresi: "Sicil No" sütunu olan raporlara uygulanır
+  const [departman, setDepartman] = useState("");
+  const [unvan, setUnvan] = useState("");
+  const departmanlar = useMemo(() => [...new Set(personeller.map((p) => p.departman || "").filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr")), [personeller]);
+  const unvanlar = useMemo(() => [...new Set(personeller.map((p) => p.unvan || "").filter(Boolean))].sort((a, b) => a.localeCompare(b, "tr")), [personeller]);
+  function filtrele(veriler: Satir[]): Satir[] {
+    if (!departman && !unvan) return veriler;
+    const izinli = new Set(personeller.filter((p) => (!departman || (p.departman || "") === departman) && (!unvan || (p.unvan || "") === unvan)).map((p) => p.sicil_no));
+    if (!veriler.some((v) => "Sicil No" in v)) return veriler;
+    let onceki = false;
+    const sonuc = veriler.filter((v) => {
+      const s = String(v["Sicil No"] ?? "");
+      // Kişinin devam satırı (ör. cetvelde "Gerçekleşen") sicilsizdir: önceki satırla birlikte kalır
+      onceki = s ? izinli.has(s) : onceki;
+      return onceki;
+    });
+    let n = 0;
+    return sonuc.map((v) => ("Sıra" in v && typeof v.Sıra === "number" ? { ...v, Sıra: ++n } : v));
+  }
   /** Dönemin ilk günü ve bitişten sonraki gün (dahil değil) */
   const ayAraligi = () => {
     if (secilenAralik) {
@@ -116,7 +136,7 @@ export default function RaporlarSekmesi({
     { kod: "cetvel", grup: "Puantaj ve devam", ad: "Aylık puantaj cetveli", aciklama: "Personeller satırda, günler sütunda: planlanan ve gerçekleşen saat (ondalık), NM, FM, EÇ, HT, RT ve gün toplamları.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("cetvel", secilenAralik) } },
     { kod: "ayrintili", grup: "Puantaj ve devam", ad: "Ayrıntılı devam çizelgesi", aciklama: "Her personelin gün gün giriş, çıkış, net çalışma ve durumu.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("ayrintili", secilenAralik) } },
     { kod: "hareketler", grup: "Puantaj ve devam", ad: "Giriş-çıkış hareketleri", aciklama: "Bütün mobil ve manuel giriş/çıkış kayıtları, konum mesafesiyle.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("hareketler", secilenAralik) } },
-    { kod: "gecikme", grup: "Puantaj ve devam", ad: "Geç kalma ve devamsızlık", aciklama: "Toplam gecikme süresi, devamsız ve eksik hareketli günler.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("gecikme", secilenAralik) } },
+    { kod: "gecikme", grup: "Puantaj ve devam", ad: "Performans: geç giriş, erken çıkış, devamsızlık", aciklama: "Geç giriş ve erken çıkış gün sayıları ve süreleri, devamsız ve eksik hareketli günler.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("gecikme", secilenAralik) } },
     { kod: "gunluk", grup: "Puantaj ve devam", ad: "Günlük devam durumu (bugün)", aciklama: "Bugün içeride, çıkmış, izinli ve gelmeyen personel.", tur: { tip: "tablo", uret: () => cekirdek("gunluk") } },
     ...(onBordroAktarim
       ? [{ kod: "bordroAktarim", grup: "Puantaj ve devam", ad: "Bordro aktarım dosyası", aciklama: "Muhasebe/bordro programına aktarım: SGK günleri, ücret, mesai saatleri, avans/masraf.", donemli: true, sadeceAylik: true, tur: { tip: "ozel" as const, calistir: onBordroAktarim } }]
@@ -124,13 +144,210 @@ export default function RaporlarSekmesi({
     { kod: "tahminiBordro", grup: "Puantaj ve devam", ad: "Tahmini bordro", aciklama: "Brüt, kesintiler, net ve işveren maliyeti (ekranında Excel).", sadeceAylik: true, modul: "bordro", sadeceGenel: true, tur: { tip: "git", sekme: "ik", alt: "bordro" } },
 
     // ------------------------------------------------------------ İzin ve fazla mesai
-    { kod: "talepler", grup: "İzin ve fazla mesai", ad: "İzin ve rapor talepleri", aciklama: "Bütün izin, rapor ve saatlik izin kayıtları, onay durumlarıyla.", donemli: mod === "aralik", tur: { tip: "tablo", uret: () => cekirdek("talepler", secilenAralik) } },
+    { kod: "izinOzet", grup: "İzin ve fazla mesai", ad: "Personel izin raporu", aciklama: "Onaylı izinler kişi ve izin türü bazında: izin sayısı, dönemdeki iş günü ve takvim günü.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("izinOzet", secilenAralik) } },
+    { kod: "saatlikIzin", grup: "İzin ve fazla mesai", ad: "Saatlik izin raporu", aciklama: "Onaylı saatlik izinler, saat aralıkları ve kişi başı toplam süre.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("saatlikIzin", secilenAralik) } },
+    { kod: "talepler", grup: "İzin ve fazla mesai", ad: "Onaylı izin ve raporlar (kayıt kayıt)", aciklama: "Onaylanmış bütün izin, rapor ve saatlik izin kayıtları tek tek.", donemli: mod === "aralik", tur: { tip: "tablo", uret: () => cekirdek("talepler", secilenAralik) } },
     { kod: "izinBakiye", grup: "İzin ve fazla mesai", ad: "Yıllık izin bakiyeleri", aciklama: "Kıdem, devreden, hak edilen, kullanılan ve kalan yıllık izin.", tur: { tip: "tablo", uret: () => cekirdek("izinBakiye") } },
-    { kod: "mesai", grup: "İzin ve fazla mesai", ad: "Fazla mesai talepleri", aciklama: "Dönemin fazla mesai bildirimleri, süreleri ve kararları.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("mesai", secilenAralik) } },
+    { kod: "izinDonem", grup: "İzin ve fazla mesai", ad: "Yıllık izin dönemleri", aciklama: "Her hizmet yılı için devreden, hak edilen, kullanılan, kalan ve dönemin durumu.", tur: { tip: "tablo", uret: () => cekirdek("izinDonem") } },
+    { kod: "mesai", grup: "İzin ve fazla mesai", ad: "Onaylı fazla mesailer", aciklama: "Dönemde müdürün onayladığı fazla mesailer ve süreleri.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("mesai", secilenAralik) } },
 
     // ------------------------------------------------------------ Personel
     { kod: "personel", grup: "Personel", ad: "Personel listesi", aciklama: "Bütün personel: sicil, T.C., şube, vardiya, giriş/çıkış tarihi, durum.", tur: { tip: "tablo", uret: () => cekirdek("personel") } },
-    { kod: "vardiya", grup: "Personel", ad: "Vardiya listesi", aciklama: "Vardiyalar, saatleri ve molaları.", tur: { tip: "tablo", uret: () => cekirdek("vardiya") } },
+    { kod: "vardiya", grup: "Personel", ad: "Vardiya tanımları", aciklama: "Vardiyalar, saatleri ve molaları.", tur: { tip: "tablo", uret: () => cekirdek("vardiya") } },
+    { kod: "vardiyaPlan", grup: "Personel", ad: "Vardiya listesi (kim, hangi gün)", aciklama: "Dönemde her personelin gün gün vardiyası, saatleri ve gün türü (plan ya da varsayılan).", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("vardiyaPlan", secilenAralik) } },
+    {
+      kod: "personelDetay",
+      grup: "Personel",
+      ad: "Detaylı personel bilgileri",
+      aciklama: genel ? "Personel ve Özlük bilgileri tek tabloda: iletişim, ünvan, eğitim, çalışma şekli, acil durum kişisi, IBAN." : "Personel bilgileri tek tabloda (Özlük bilgileri yalnızca genel yöneticiye).",
+      tur: {
+        tip: "tablo",
+        uret: async () => {
+          const oz = genel
+            ? await sorgu<{ personel_id: string; telefon: string | null; eposta: string | null; adres: string | null; calisma_sekli: string | null; egitim: string | null; acil_kisi: string | null; acil_yakinlik: string | null; acil_telefon: string | null; iban: string | null }>(
+                supabase.from("personel_ozluk").select("personel_id, telefon, eposta, adres, calisma_sekli, egitim, acil_kisi, acil_yakinlik, acil_telefon, iban")
+              ).catch(() => [])
+            : [];
+          const ozm = new Map(oz.map((o) => [o.personel_id, o]));
+          return {
+            baslik: "Detaylı Personel Bilgileri",
+            dosyaAdi: `${ek}_Personel_Detay`,
+            veriler: personeller.map((p, i) => {
+              const o = ozm.get(p.id);
+              const temel: Satir = {
+                Sıra: i + 1,
+                "Sicil No": p.sicil_no,
+                "Ad Soyad": `${p.ad} ${p.soyad}`,
+                "T.C. Kimlik": p.tc_kimlik,
+                Departman: p.departman ?? "",
+                Ünvan: p.unvan ?? "",
+                Şube: p.subeler?.ad ?? "",
+                Vardiya: p.vardiyalar?.ad ?? "",
+                "İşe Giriş": p.ise_giris_tarihi ?? "",
+                "İşten Çıkış": p.cikis_tarihi ?? "",
+                "Doğum Tarihi": p.dogum_tarihi ?? "",
+                Durum: p.aktif ? "Aktif" : "Pasif",
+                Mobil: p.cihaz_id ? "Telefon eşleşti" : p.pin_tanimli ? "PIN var, telefon yok" : "PIN yok",
+              };
+              return genel
+                ? {
+                    ...temel,
+                    Telefon: o?.telefon ?? "",
+                    "E-posta": o?.eposta ?? "",
+                    Adres: o?.adres ?? "",
+                    "Çalışma Şekli": o?.calisma_sekli ?? "",
+                    Eğitim: o?.egitim ?? "",
+                    "Acil Durum Kişisi": o?.acil_kisi ?? "",
+                    Yakınlık: o?.acil_yakinlik ?? "",
+                    "Acil Telefon": o?.acil_telefon ?? "",
+                    IBAN: o?.iban ?? "",
+                  }
+                : temel;
+            }),
+          };
+        },
+      },
+    },
+    ...(genel
+      ? [
+          {
+            kod: "ucretListesi",
+            grup: "Personel",
+            ad: "Ücret listesi",
+            aciklama: "Personelin güncel ücreti, ücret türü ve hangi tarihten beri geçerli olduğu.",
+            tur: {
+              tip: "tablo" as const,
+              uret: async () => {
+                const [oz, gec] = await Promise.all([
+                  sorgu<{ personel_id: string; ucret: number | null; ucret_turu: string | null }>(supabase.from("personel_ozluk").select("personel_id, ucret, ucret_turu")),
+                  sorgu<{ personel_id: string; gecerlilik: string }>(supabase.from("personel_ucret_gecmisi").select("personel_id, gecerlilik").order("gecerlilik")).catch(() => []),
+                ]);
+                const son = new Map<string, string>();
+                for (const g of gec) son.set(g.personel_id, g.gecerlilik);
+                const ozm = new Map(oz.map((o) => [o.personel_id, o]));
+                return {
+                  baslik: `Ücret Listesi (${yerelTarih()})`,
+                  dosyaAdi: `${ek}_Ucret_Listesi`,
+                  veriler: personeller.map((p, i) => {
+                    const o = ozm.get(p.id);
+                    return {
+                      Sıra: i + 1,
+                      "Sicil No": p.sicil_no,
+                      "Ad Soyad": `${p.ad} ${p.soyad}`,
+                      Departman: p.departman ?? "",
+                      Ünvan: p.unvan ?? "",
+                      Şube: p.subeler?.ad ?? "",
+                      "Ücret Türü": o?.ucret_turu ?? "",
+                      "Ücret (TL)": o?.ucret != null ? Number(o.ucret) : "",
+                      "Geçerli Olduğu Tarih": son.get(p.id) ?? "",
+                      Durum: p.aktif ? "Aktif" : "Pasif",
+                    };
+                  }),
+                };
+              },
+            },
+          },
+          {
+            kod: "ucretGecmisi",
+            grup: "Personel",
+            ad: "Ücret geçmişi",
+            aciklama: "Ücret ve ücret türü değişiklikleri, geçerlilik tarihleriyle (Özlük'te her değişiklikte kaydedilir).",
+            donemli: mod === "aralik",
+            tur: {
+              tip: "tablo" as const,
+              uret: async () => {
+                const l = await sorgu<{ personel_id: string; ucret: number | null; ucret_turu: string | null; gecerlilik: string }>(
+                  supabase.from("personel_ucret_gecmisi").select("personel_id, ucret, ucret_turu, gecerlilik").order("gecerlilik")
+                ).catch(() => {
+                  throw new Error("Ücret geçmişi kurulmamış: supabase/2026-10-18_ucret_gecmisi.sql çalıştırılmalı.");
+                });
+                return {
+                  baslik: "Ücret Geçmişi",
+                  dosyaAdi: `${ek}_Ucret_Gecmisi`,
+                  veriler: l
+                    .filter((g) => kisiler.has(g.personel_id) && aralikta(g.gecerlilik))
+                    .sort((a, b) => ad(a.personel_id).localeCompare(ad(b.personel_id), "tr") || a.gecerlilik.localeCompare(b.gecerlilik))
+                    .map((g, i) => ({
+                      Sıra: i + 1,
+                      "Sicil No": sicil(g.personel_id),
+                      "Ad Soyad": ad(g.personel_id),
+                      "Geçerlilik Başlangıcı": g.gecerlilik,
+                      "Ücret Türü": g.ucret_turu ?? "",
+                      "Ücret (TL)": g.ucret != null ? Number(g.ucret) : "",
+                    })),
+                };
+              },
+            },
+          },
+          {
+            kod: "islemGecmisi",
+            grup: "Personel",
+            ad: "İşlem geçmişi (kayıt logu)",
+            aciklama: "Panelde kim, ne zaman, neyi değiştirdi: manuel hareket, izin onayı, personel, cihaz kilidi vb.",
+            donemli: true,
+            tur: {
+              tip: "tablo" as const,
+              uret: async () => {
+                const { bas, son } = ayAraligi();
+                const l = await sorgu<Kayit>(
+                  supabase.from("islem_gecmisi").select("*").gte("zaman", `${bas}T00:00:00+03:00`).lt("zaman", `${son}T00:00:00+03:00`).order("zaman").limit(5000)
+                );
+                return {
+                  baslik: `İşlem Geçmişi (${donemEtiketi})`,
+                  dosyaAdi: `${ek}_Islem_Gecmisi_${donemEki}`,
+                  veriler: l.map((x, i) => ({
+                    Sıra: i + 1,
+                    Zaman: `${yerelTarih(x.zaman)} ${new Date(x.zaman).toLocaleTimeString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit" })}`,
+                    Kullanıcı: x.kullanici_eposta ?? "Sistem / mobil",
+                    Kayıt: TABLOLAR[x.tablo] ?? x.tablo,
+                    İşlem: islemOzeti(x),
+                    Personel: x.personel_id ? ad(x.personel_id) : "",
+                    "Sicil No": x.personel_id ? sicil(x.personel_id) : "",
+                    Ayrıntı: ayrintilar(x).join(" · "),
+                  })),
+                };
+              },
+            },
+          },
+          {
+            kod: "cihaz",
+            grup: "Personel",
+            ad: "Telefon ve cihaz kayıtları",
+            aciklama: "Personelin telefon eşleşmesi ve dönemdeki yeni telefon talepleri, kararlarıyla.",
+            donemli: true,
+            tur: {
+              tip: "tablo" as const,
+              uret: async () => {
+                const { bas, son } = ayAraligi();
+                const l = await sorgu<{ personel_id: string; cihaz_bilgisi: string | null; durum: string; created_at: string }>(
+                  supabase.from("cihaz_talepleri").select("personel_id, cihaz_bilgisi, durum, created_at").gte("created_at", `${bas}T00:00:00+03:00`).lt("created_at", `${son}T00:00:00+03:00`).order("created_at")
+                ).catch(() => []);
+                const talepler: Satir[] = l
+                  .filter((t) => kisiler.has(t.personel_id))
+                  .map((t) => ({
+                    Kayıt: "Yeni telefon talebi",
+                    Tarih: yerelTarih(t.created_at),
+                    "Sicil No": sicil(t.personel_id),
+                    "Ad Soyad": ad(t.personel_id),
+                    Cihaz: t.cihaz_bilgisi ?? "",
+                    Durum: t.durum === "ONAYLANDI" ? "Onaylandı" : t.durum === "REDDEDILDI" ? "Reddedildi" : t.durum === "IPTAL" ? "İptal" : "Bekliyor",
+                  }));
+                const durumlar: Satir[] = personeller
+                  .filter((p) => p.aktif)
+                  .map((p) => ({
+                    Kayıt: "Güncel durum",
+                    Tarih: yerelTarih(),
+                    "Sicil No": p.sicil_no,
+                    "Ad Soyad": `${p.ad} ${p.soyad}`,
+                    Cihaz: p.cihaz_id ? "Telefon eşleşmiş" : "",
+                    Durum: p.cihaz_id ? "Eşleşti" : p.pin_tanimli ? "PIN var, telefon yok" : "PIN yok",
+                  }));
+                return { baslik: `Telefon ve Cihaz Kayıtları (${donemEtiketi})`, dosyaAdi: `${ek}_Cihaz_${donemEki}`, veriler: [...talepler, ...durumlar].map((x, i) => ({ Sıra: i + 1, ...x })) };
+              },
+            },
+          },
+        ]
+      : []),
     ...(genel ? [{ kod: "subeler", grup: "Personel", ad: "Şube listesi", aciklama: "Şubeler, konumları ve personel sayıları.", tur: { tip: "tablo" as const, uret: () => cekirdek("subeler") } }] : []),
 
     // ------------------------------------------------------------ İK işlemleri
@@ -201,8 +418,8 @@ export default function RaporlarSekmesi({
     {
       kod: "odeme",
       grup: "İK işlemleri",
-      ad: "Avans ve masraf",
-      aciklama: "Ayın avans ve masraf kayıtları, onay ve ödeme durumları.",
+      ad: "Avans ve masraf (kayıt kayıt)",
+      aciklama: "Dönemde onaylanan ve ödenen avans ve masraf kayıtları.",
       donemli: true,
       modul: "odeme",
       tur: {
@@ -210,10 +427,10 @@ export default function RaporlarSekmesi({
         uret: async () => {
           const { bas, son } = ayAraligi();
           const l = await sorgu<{ personel_id: string; tur: string; tutar: number; tarih: string; kategori: string | null; aciklama: string | null; durum: string; odeme_tarihi: string | null; kaynak: string }>(
-            supabase.from("odeme_talepleri").select("*").gte("tarih", bas).lt("tarih", son).order("tarih")
+            supabase.from("odeme_talepleri").select("*").gte("tarih", bas).lt("tarih", son).in("durum", ["ONAYLANDI", "ODENDI"]).order("tarih")
           );
           return {
-            baslik: `Avans ve Masraf (${donemEtiketi})`,
+            baslik: `Onaylı Avans ve Masraf (${donemEtiketi})`,
             dosyaAdi: `${ek}_Avans_Masraf_${donemEki}`,
             veriler: l.filter((o) => kisiler.has(o.personel_id)).map((o, i) => ({
               Sıra: i + 1,
@@ -228,6 +445,51 @@ export default function RaporlarSekmesi({
               "Ödeme Tarihi": o.odeme_tarihi ?? "",
               Kaynak: o.kaynak === "mobil" ? "Telefon" : "Panel",
             })),
+          };
+        },
+      },
+    },
+    {
+      kod: "avansOzet",
+      grup: "İK işlemleri",
+      ad: "Personel avans raporu",
+      aciklama: "Onaylı ve ödenmiş avanslar kişi bazında: avans sayısı, toplam tutar, ödenen ve ödenecek.",
+      donemli: true,
+      modul: "odeme",
+      tur: {
+        tip: "tablo",
+        uret: async () => {
+          const { bas, son } = ayAraligi();
+          const l = await sorgu<{ personel_id: string; tur: string; tutar: number; durum: string }>(
+            supabase.from("odeme_talepleri").select("personel_id, tur, tutar, durum").eq("tur", "Avans").in("durum", ["ONAYLANDI", "ODENDI"]).gte("tarih", bas).lt("tarih", son)
+          );
+          const g = new Map<string, { adet: number; toplam: number; odenen: number }>();
+          for (const o of l.filter((x) => kisiler.has(x.personel_id))) {
+            const k = g.get(o.personel_id) ?? { adet: 0, toplam: 0, odenen: 0 };
+            k.adet++;
+            k.toplam += Number(o.tutar);
+            if (o.durum === "ODENDI") k.odenen += Number(o.tutar);
+            g.set(o.personel_id, k);
+          }
+          return {
+            baslik: `Personel Avans Raporu (${donemEtiketi})`,
+            dosyaAdi: `${ek}_Avans_Raporu_${donemEki}`,
+            veriler: [...g.entries()]
+              .sort((a, b) => b[1].toplam - a[1].toplam)
+              .map(([id, k], i) => {
+                const p = kisiler.get(id);
+                return {
+                  Sıra: i + 1,
+                  "Sicil No": sicil(id),
+                  "Ad Soyad": ad(id),
+                  Departman: p?.departman ?? "",
+                  Ünvan: p?.unvan ?? "",
+                  "Avans Sayısı": k.adet,
+                  "Toplam Avans (TL)": Math.round(k.toplam * 100) / 100,
+                  "Ödenen (TL)": Math.round(k.odenen * 100) / 100,
+                  "Ödenecek (TL)": Math.round((k.toplam - k.odenen) * 100) / 100,
+                };
+              }),
           };
         },
       },
@@ -402,7 +664,8 @@ export default function RaporlarSekmesi({
     setCalisan(r.kod + bicim);
     const pencere = bicim === "pdf" ? window.open("", "_blank") : null;
     try {
-      const v = await r.tur.uret();
+      const ham = await r.tur.uret();
+      const v = { ...ham, veriler: filtrele(ham.veriler) };
       if (!v.veriler.length) {
         pencere?.close();
         bildir(`${r.ad}: ${r.donemli ? `${donemEtiketi} için kayıt yok` : "henüz kayıt yok"}.`, "bilgi");
@@ -446,9 +709,35 @@ export default function RaporlarSekmesi({
           )}
         </div>
       </div>
+      {(departmanlar.length > 0 || unvanlar.length > 0) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="m2 text-xs font-semibold">Personel filtresi</span>
+          <select className="girdi girdi-sik" style={{ width: "auto", minWidth: 170 }} value={departman} onChange={(e) => setDepartman(e.target.value)} aria-label="Departman">
+            <option value="">Tüm departmanlar</option>
+            {departmanlar.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+          <select className="girdi girdi-sik" style={{ width: "auto", minWidth: 170 }} value={unvan} onChange={(e) => setUnvan(e.target.value)} aria-label="Ünvan">
+            <option value="">Tüm ünvanlar</option>
+            {unvanlar.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+          {(departman || unvan) && (
+            <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => (setDepartman(""), setUnvan(""))}>
+              Temizle
+            </button>
+          )}
+        </div>
+      )}
       {mod === "aralik" && !aralikGecerli && <p className="text-sm" style={{ color: "var(--hata)" }}>Başlangıç tarihi bitişten sonra olamaz.</p>}
       <p className="m3 text-xs">
-        Dönemli raporlar {donemEtiketi} için hazırlanır{mod === "aralik" ? "; bordro dosyaları yalnızca aylık alınır (Ay seçin)" : ""}. Üstteki şube seçimi puantaj, hareket, personel ve izin raporlarına uygulanır. Raporlar T.C.
+        Dönemli raporlar {donemEtiketi} için hazırlanır{mod === "aralik" ? "; bordro dosyaları yalnızca aylık alınır (Ay seçin)" : ""}. Üstteki şube seçimi puantaj, hareket, personel ve izin raporlarına; departman ve ünvan filtresi sicil numarası olan raporlara uygulanır. Onay gerektiren kayıtlardan (izin, fazla mesai, avans, masraf) yalnızca onaylananlar raporlanır. Raporlar T.C.
         kimlik gibi kişisel veri içerebilir; paylaşırken dikkat edin.
       </p>
 

@@ -6,7 +6,7 @@ import { hataYaz, type Personel } from "../../lib/tipler";
 import { kisaTarih, yerelSaat, yerelTarih } from "../../lib/tarih";
 import { Bos, Ikon, Iskelet, Rozet } from "../ui";
 
-interface Kayit {
+export interface Kayit {
   id: number;
   zaman: string;
   kullanici_id: string | null;
@@ -23,7 +23,7 @@ const SAYFA = 200;
 /** Aynı kişinin aynı türdeki işlemleri bu kadar saniye içindeyse tek satırda toplanır (ör. toplu atama) */
 const GRUP_SANIYE = 10;
 
-const TABLOLAR: Record<string, string> = {
+export const TABLOLAR: Record<string, string> = {
   hareketler: "Giriş/çıkış",
   izinler: "İzin",
   vardiya_plani: "Vardiya planı",
@@ -79,7 +79,7 @@ function deger(v: unknown): string {
 }
 
 /** Bir kaydı okunur bir cümleye çevirir */
-function ozet(k: Kayit): string {
+export function ozet(k: Kayit): string {
   const o = k.once ?? {};
   const y = k.sonra ?? {};
   if (k.tablo === "ay_kilitleri") return k.islem === "DELETE" ? `${o.ay} ayını açtı` : `${y.ay} ayını kapattı`;
@@ -102,7 +102,7 @@ function ozet(k: Kayit): string {
   return `${(TABLOLAR[k.tablo] ?? k.tablo).toLocaleLowerCase("tr-TR")} kaydı ${fiil}`;
 }
 
-function ayrintilar(k: Kayit): string[] {
+export function ayrintilar(k: Kayit): string[] {
   if (k.islem === "UPDATE") {
     return Object.keys(k.sonra ?? {}).map(
       (a) => `${ALANLAR[a] ?? a}: ${deger(k.once?.[a])} → ${deger(k.sonra?.[a])}`

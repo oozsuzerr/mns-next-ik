@@ -109,6 +109,11 @@ export interface PuantajSatiri {
   resmiTatilMesaiDk: number;
   haftaTatiliMesaiDk: number;
   gecikmeDk: number;
+  /** Toleransı aşan geç girişin olduğu gün sayısı */
+  gecGirisGun: number;
+  /** Vardiya bitişinden toleranstan fazla erken çıkılan gün sayısı ve toplam süre (saatlik izin düşülmüş) */
+  erkenCikisGun: number;
+  erkenCikisDk: number;
   gunlukDetaylar: GunDetay[];
 }
 
@@ -259,6 +264,9 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
     let resmiTatilDk = 0;
     let haftaTatiliDk = 0;
     let gecikmeDk = 0;
+    let gecGirisGun = 0;
+    let erkenCikisGun = 0;
+    let erkenCikisDk = 0;
     const detaylar: GunDetay[] = [];
 
     for (let gun = 1; gun <= gunSayisi; gun++) {
@@ -347,6 +355,8 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
             durum = "Fiili Çalışma";
 
             // Her planlı vardiya kendi oturumlarıyla karşılaştırılır (bölünmüş çalışmada sabah ve akşam ayrı ayrı)
+            let gunGec = false;
+            let gunErken = false;
             for (const v of gp.vardiyalar) {
               const plan = vardiyaAni(tarih, v);
               const kendi = oturum.filter((o) => {
@@ -369,13 +379,28 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
                   0
                 );
                 const gecikme = Math.round((vGiris.getTime() - plan.bas) / 60000 - izinliDk);
-                if (gecikme > ayar.gecikme_tolerans_dk) gecikmeDk += gecikme;
+                if (gecikme > ayar.gecikme_tolerans_dk) {
+                  gecikmeDk += gecikme;
+                  gunGec = true;
+                }
               }
               if (vCikis) {
                 const mesai = Math.round((vCikis.getTime() - plan.son) / 60000);
                 if (mesai > ayar.mesai_tolerans_dk) planDisiDk += mesai;
+                // Erken çıkış: çıkış ile vardiya bitişi arasındaki süreden o aralıktaki saatlik izin düşülür
+                const izinliDk = saatlikIzinler.reduce(
+                  (t, iz) => t + Math.max(0, Math.min(iz.son, plan.son) - Math.max(iz.bas, vCikis.getTime())) / 60000,
+                  0
+                );
+                const erken = Math.round((plan.son - vCikis.getTime()) / 60000 - izinliDk);
+                if (erken > ayar.gecikme_tolerans_dk) {
+                  erkenCikisDk += erken;
+                  gunErken = true;
+                }
               }
             }
+            if (gunGec) gecGirisGun++;
+            if (gunErken) erkenCikisGun++;
           }
         } else if (mesaide) {
           calisilan++;
@@ -487,6 +512,9 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       resmiTatilMesaiDk: resmiTatilDk,
       haftaTatiliMesaiDk: haftaTatiliDk,
       gecikmeDk,
+      gecGirisGun,
+      erkenCikisGun,
+      erkenCikisDk,
       gunlukDetaylar: detaylar,
     };
   });
@@ -515,7 +543,7 @@ export function aralikPuantajHesapla(g: Omit<PuantajGirdi, "yil" | "ay" | "arali
       const sayisal: (keyof PuantajSatiri)[] = [
         "calisilanGunler", "eksikGunler", "raporluGunler", "izinliGunler", "devamsizGunler", "yillikIzinGunler",
         "ucretliIzinGunler", "ucretsizIzinGunler", "sgkTabanGun", "sgkEksikGun", "sgkPrimGun", "resmiTatilCalismalari",
-        "haftaTatiliCalismalari", "toplamCalismaDk", "planDisiMesaiDk", "resmiTatilMesaiDk", "haftaTatiliMesaiDk", "gecikmeDk",
+        "haftaTatiliCalismalari", "toplamCalismaDk", "planDisiMesaiDk", "resmiTatilMesaiDk", "haftaTatiliMesaiDk", "gecikmeDk", "gecGirisGun", "erkenCikisGun", "erkenCikisDk",
       ];
       for (const k of sayisal) (once as unknown as Record<string, number>)[k] = (once[k] as number) + (satir[k] as number);
       if (satir.sgkEksikKodu && !once.sgkEksikKodu.split(", ").includes(satir.sgkEksikKodu)) {
