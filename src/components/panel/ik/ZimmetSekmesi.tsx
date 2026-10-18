@@ -38,7 +38,7 @@ export interface Zimmet {
 const para = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Personelin bütün zimmetlerini (üzerindekiler ve iade ettikleri) gösteren imzalı tutanak */
-function tutanakYazdir(firmaAd: string, p: Personel, liste: Zimmet[]): string | null {
+export function tutanakYazdir(firmaAd: string, p: Personel, liste: Zimmet[]): string | null {
   const acik = liste.filter((z) => !z.iade_tarihi);
   const iade = liste.filter((z) => z.iade_tarihi);
   const satir = (z: Zimmet, i: number, iadeli: boolean) => `<tr>

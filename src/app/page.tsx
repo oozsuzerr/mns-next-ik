@@ -37,6 +37,7 @@ import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import SubelerSekmesi from "../components/panel/SubelerSekmesi";
 import IkSekmesi, { ikBolumleri } from "../components/panel/ik/IkSekmesi";
+import RaporlarSekmesi from "../components/panel/RaporlarSekmesi";
 import { fazlaMesaiBrut, useBordroVerisi } from "../components/panel/ik/bordroVerisi";
 import { modulAcik } from "../lib/moduller";
 import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
@@ -76,6 +77,8 @@ const SEKMELER: { id: Sekme; etiket: string; kisa: string; ikon: IkonAdi }[] = [
   { id: "personel", etiket: "Personel", kisa: "Personel", ikon: "personel" },
   { id: "vardiya", etiket: "Vardiyalar", kisa: "Vardiya", ikon: "vardiya" },
   { id: "ik", etiket: "İK işlemleri", kisa: "İK", ikon: "ik" },
+  // Rapor indirme yetkisi olanlar görür (bkz. gorunenSekmeler)
+  { id: "raporlar", etiket: "Raporlar", kisa: "Rapor", ikon: "rapor" },
   // Yalnızca genel yönetici görür (bkz. gorunenSekmeler)
   { id: "subeler", etiket: "Şubeler", kisa: "Şube", ikon: "konum" },
 ];
@@ -829,10 +832,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   // -------------------------------------------------------------------
   // Dışa aktarma
   // -------------------------------------------------------------------
-  function aktifSekmeVerisi(): { baslik: string; dosyaAdi: string; veriler: Satir[]; sureSutunlari?: string[] } {
+  function sekmeVerisi(sekme: Sekme = aktifSekme): { baslik: string; dosyaAdi: string; veriler: Satir[]; sureSutunlari?: string[] } {
     const ek = `MNS_Next_IK_${bugunTarih}`;
 
-    if (aktifSekme === "genel") {
+    if (sekme === "genel") {
       return {
         baslik: `PDKS Hareketleri (${seciliAy})`,
         dosyaAdi: `${ek}_Hareketler_${seciliAy}`,
@@ -851,7 +854,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       };
     }
 
-    if (aktifSekme === "mesai") {
+    if (sekme === "mesai") {
       return {
         baslik: `Fazla Mesai (${seciliAy})`,
         dosyaAdi: `${ek}_FazlaMesai_${seciliAy}`,
@@ -875,7 +878,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         sureSutunlari: [MESAI_SURE],
       };
     }
-    if (aktifSekme === "talepler") {
+    if (sekme === "talepler") {
       return {
         baslik: "İzin ve Rapor Talepleri",
         dosyaAdi: `${ek}_Izinler`,
@@ -893,7 +896,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       };
     }
 
-    if (aktifSekme === "vardiya") {
+    if (sekme === "vardiya") {
       return {
         baslik: "Vardiya Listesi",
         dosyaAdi: `${ek}_Vardiyalar`,
@@ -907,7 +910,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       };
     }
 
-    if (aktifSekme === "subeler") {
+    if (sekme === "subeler") {
       return {
         baslik: "Şube Listesi",
         dosyaAdi: `${ek}_Subeler`,
@@ -922,7 +925,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       };
     }
 
-    if (aktifSekme === "personel") {
+    if (sekme === "personel") {
       return {
         baslik: "Personel Listesi",
         dosyaAdi: `${ek}_Personeller`,
@@ -1047,8 +1050,116 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     else bildir("Bordro aktarım dosyası hazırlandı. SGK günleri tahmindir; mali müşavirinizle kontrol edin.", "basari");
   }
 
+  /** Raporlar sayfasındaki çekirdek raporlar (seçili ay ve şube filtresiyle) */
+  function cekirdekRapor(kod: string): { baslik: string; dosyaAdi: string; veriler: Satir[]; sureSutunlari?: string[] } {
+    const ek = `MNS_Next_IK_${bugunTarih}`;
+    const sekmeye: Record<string, Sekme> = {
+      puantaj: "puantaj",
+      hareketler: "genel",
+      mesai: "mesai",
+      talepler: "talepler",
+      personel: "personel",
+      vardiya: "vardiya",
+      subeler: "subeler",
+    };
+    if (sekmeye[kod]) return sekmeVerisi(sekmeye[kod]);
+    if (kod === "gunluk") {
+      const durumu = (id: string) =>
+        bugunOzet.iceride.some((x) => x.id === id)
+          ? "İçeride"
+          : bugunOzet.cikti.some((x) => x.id === id)
+          ? "Çıktı"
+          : bugunOzet.izinli.some((x) => x.id === id)
+          ? "İzinli"
+          : bugunOzet.gelmedi.some((x) => x.id === id)
+          ? "Gelmedi"
+          : bugunOzet.tatil
+          ? "Tatil"
+          : "Henüz gelmedi / vardiyası yok";
+      return {
+        baslik: `Günlük Devam Durumu (${bugunTarih})`,
+        dosyaAdi: `${ek}_Gunluk_Devam`,
+        veriler: filtrelenmisPersoneller
+          .filter((x) => x.aktif)
+          .map((x, i) => ({
+            Sıra: i + 1,
+            "Sicil No": x.sicil_no,
+            "Ad Soyad": `${x.ad} ${x.soyad}`,
+            Şube: x.subeler?.ad || "-",
+            Durum: durumu(x.id),
+            "Geç Kaldı": bugunOzet.gec.some((g) => g.id === x.id) ? "Evet" : "",
+          })),
+      };
+    }
+    if (kod === "gecikme") {
+      return {
+        baslik: `Geç Kalma ve Devamsızlık (${seciliAy})`,
+        dosyaAdi: `${ek}_Gecikme_${seciliAy}`,
+        veriler: filtrelenmisPuantaj
+          .filter((x) => x.gecikmeDk > 0 || x.devamsizGunler > 0 || x.eksikGunler > 0)
+          .sort((a, b) => b.gecikmeDk - a.gecikmeDk)
+          .map((x, i) => ({
+            Sıra: i + 1,
+            "Sicil No": x.sicil_no,
+            "Ad Soyad": x.adSoyad,
+            Şube: x.subeAdi,
+            "Toplam Gecikme (sa:dk)": x.gecikmeDk,
+            "Devamsız Gün": x.devamsizGunler,
+            "Eksik Hareketli Gün": x.eksikGunler,
+          })),
+        sureSutunlari: ["Toplam Gecikme (sa:dk)"],
+      };
+    }
+    if (kod === "izinBakiye") {
+      return {
+        baslik: `Yıllık İzin Bakiyeleri (${bugunTarih})`,
+        dosyaAdi: `${ek}_Izin_Bakiyeleri`,
+        veriler: filtrelenmisPersoneller
+          .filter((x) => x.aktif)
+          .map((x, i) => {
+            const b = bakiyeler[x.id];
+            return {
+              Sıra: i + 1,
+              "Sicil No": x.sicil_no,
+              "Ad Soyad": `${x.ad} ${x.soyad}`,
+              Şube: x.subeler?.ad || "-",
+              "İşe Giriş": x.ise_giris_tarihi || "-",
+              "Kıdem (yıl)": b?.kidem_yil ?? "",
+              Devreden: b?.devreden ?? "",
+              "Hak Edilen": b?.hak_edilen ?? "",
+              Kullanılan: b?.kullanilan ?? "",
+              "Onay Bekleyen": b?.bekleyen ?? "",
+              Kalan: b?.kalan ?? "",
+              "Sonraki Hak Tarihi": b?.sonraki_hak_tarihi ?? "",
+            };
+          }),
+      };
+    }
+    if (kod === "ayrintili") {
+      return {
+        baslik: `Ayrıntılı Devam Çizelgesi (${seciliAy})`,
+        dosyaAdi: `${ek}_Ayrintili_Devam_${seciliAy}`,
+        veriler: filtrelenmisPuantaj.flatMap((x) =>
+          x.gunlukDetaylar.map((d) => ({
+            "Sicil No": x.sicil_no,
+            "Ad Soyad": x.adSoyad,
+            Şube: x.subeAdi,
+            Tarih: d.tarih,
+            Gün: d.gunAdi,
+            Giriş: d.giris,
+            Çıkış: d.cikis,
+            "Net Çalışma": d.netCalisma,
+            Durum: d.durum,
+            Not: d.not,
+          }))
+        ),
+      };
+    }
+    return { baslik: "", dosyaAdi: "", veriler: [] };
+  }
+
   function raporIndir(format: Bicim) {
-    const { baslik, dosyaAdi, veriler, sureSutunlari } = aktifSekmeVerisi();
+    const { baslik, dosyaAdi, veriler, sureSutunlari } = sekmeVerisi();
     const sorun = disariAktar(format, baslik, dosyaAdi, veriler, sureSutunlari);
     if (sorun) bildir(sorun, "hata");
     else bildir("Rapor hazırlandı.", "basari");
@@ -1209,7 +1320,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   }
 
   // Şubeler yalnızca genel yöneticide; İK işlemleri firmada en az bir modül açıksa
-  const gorunenSekmeler = SEKMELER.filter((s) => (s.id !== "subeler" || genel) && (s.id !== "ik" || yetki.moduller == null || yetki.moduller.length > 0));
+  const gorunenSekmeler = SEKMELER.filter(
+    (s) => (s.id !== "subeler" || genel) && (s.id !== "ik" || yetki.moduller == null || yetki.moduller.length > 0) && (s.id !== "raporlar" || yetkili("rapor"))
+  );
   const altAna = gorunenSekmeler.filter((s) => ALT_CUBUK.includes(s.id));
   const altDiger = gorunenSekmeler.filter((s) => !ALT_CUBUK.includes(s.id));
   const digerSayac = altDiger.reduce((t, s) => t + (sekmeSayaci[s.id] ?? 0), 0);
@@ -1243,6 +1356,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       ],
     },
     { id: "ik", etiket: "İK işlemleri", ikon: "ik", ogeler: ikListesi.map((b) => ({ ...oge("ik", b.ad, b.id), ikon: "ik" as IkonAdi })) },
+    { id: "raporlar", etiket: null, ikon: "rapor", ogeler: sekmeVar("raporlar") ? [oge("raporlar")] : [] },
   ];
   const menuGruplari = tumGruplar.filter((g) => g.ogeler.length > 0);
   const ogeEtkin = (o: MenuOgesi) =>
@@ -1372,7 +1486,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               ))}
             </select>
 
-            {yetkili("rapor") && aktifSekme !== "ik" && (
+            {yetkili("rapor") && aktifSekme !== "ik" && aktifSekme !== "raporlar" && (
             <AcilirMenu
               etiket="Rapor indir"
               tetikleyici={
@@ -1694,6 +1808,25 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             seciliAy={seciliAy}
             onAyDegis={ayDegistir}
             bolum={etkinIk}
+          />
+        )}
+
+        {aktifSekme === "raporlar" && yetkili("rapor") && (
+          <RaporlarSekmesi
+            yonetici={yetki}
+            personeller={filtrelenmisPersoneller}
+            seciliAy={seciliAy}
+            onAyDegis={ayDegistir}
+            cekirdek={cekirdekRapor}
+            onBordroAktarim={genel ? bordroIndir : undefined}
+            onIzinKarti={(p) => {
+              const sorun = izinKartiYazdir(yetki.firma?.ad ?? "", p, izinler, bakiyeler[p.id], isTakvimi);
+              if (sorun) bildir(sorun, "hata");
+            }}
+            onGit={(sekme, alt) => {
+              setAktifSekme(sekme);
+              if (sekme === "ik" && alt) setIkBolum(alt);
+            }}
           />
         )}
 
