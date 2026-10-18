@@ -3,6 +3,7 @@
 // Sistem yöneticisi ekranı: firmaları listeler, yeni firma ve ilk yöneticisini açar, firmayı aktif/pasif yapar.
 // Yalnızca sistem_yoneticileri tablosundaki kullanıcılar görür; denetim veritabanında ve sunucuda da yapılır.
 import Link from "next/link";
+import FirmaDisaAktarim from "../../components/FirmaDisaAktarim";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { hataYaz } from "../../lib/tipler";
@@ -68,6 +69,7 @@ export default function SistemSayfasi() {
   const [formAcik, setFormAcik] = useState(false);
   const [sifreEposta, setSifreEposta] = useState<string | null>(null);
   const [paketFirma, setPaketFirma] = useState<FirmaSatiri | null>(null);
+  const [aktarFirma, setAktarFirma] = useState<FirmaSatiri | null>(null);
 
   const listeyiGetir = useCallback(async () => {
     setYenileniyor(true);
@@ -221,6 +223,10 @@ export default function SistemSayfasi() {
                           Paket
                         </button>
                       )}
+                      <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => setAktarFirma(f)} title="Firmanın bütün verisini indir (yalnızca sistem yöneticisi)">
+                        <Ikon ad="indir" boyut={14} />
+                        Veriyi indir
+                      </button>
                       <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => baglantiKopyala(f.kod)}>
                         <Ikon ad="telefon" boyut={14} />
                         Mobil bağlantı
@@ -241,6 +247,7 @@ export default function SistemSayfasi() {
         </div>
       </main>
 
+      {aktarFirma && <FirmaDisaAktarim firma={aktarFirma} onKapat={() => setAktarFirma(null)} />}
       {sifreEposta && <SifreBelirleFormu eposta={sifreEposta} onKapat={() => setSifreEposta(null)} />}
       {paketFirma && (
         <PaketFormu
