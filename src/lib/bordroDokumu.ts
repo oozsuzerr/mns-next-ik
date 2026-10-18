@@ -56,10 +56,11 @@ function kisiSayfasi(d: DokumKisi, ay: string, firma: string): string {
     ["Ücretsiz izin", oz.ucretsizIzin],
     ["Rapor", oz.rapor],
     ["NM (saat)", saatYaz(ondalik(oz.normalDk))],
-    ["FM (saat)", saatYaz(ondalik(oz.fazlaDk))],
+    ["FM onaylı (saat)", saatYaz(ondalik(oz.onayliFazlaDk))],
     ["EÇ (saat)", saatYaz(-ondalik(oz.eksikDk))],
-    ["HT (saat)", saatYaz(ondalik(oz.htDk))],
-    ["RT (saat)", saatYaz(ondalik(oz.rtDk))],
+    ["HT onaylı (saat)", saatYaz(ondalik(oz.onayliHtDk))],
+    ["RT onaylı (saat)", saatYaz(ondalik(oz.onayliRtDk))],
+    ["Onaysız fazla çalışma (saat, ücrete girmez)", saatYaz(ondalik(oz.onaysizDk))],
   ];
   const hesap = hesapKalemleri(d)
     .map(([ad, t, i]) => `<tr class="${i === "=" ? "kalin" : ""}"><td>${k(ad)}</td><td class="sag">${i === "-" ? "−" : ""}${tlYaz(t)}</td></tr>`)
@@ -123,10 +124,11 @@ export function kisiDokumuSatirlari(d: DokumKisi): Satir[] {
     ["Ücretsiz izin gün", oz.ucretsizIzin],
     ["Rapor gün", oz.rapor],
     ["NM (saat)", ondalik(oz.normalDk)],
-    ["FM (saat)", ondalik(oz.fazlaDk)],
+    ["FM onaylı (saat)", ondalik(oz.onayliFazlaDk)],
     ["EÇ (saat)", -ondalik(oz.eksikDk)],
-    ["HT (saat)", ondalik(oz.htDk)],
-    ["RT (saat)", ondalik(oz.rtDk)],
+    ["HT onaylı (saat)", ondalik(oz.onayliHtDk)],
+    ["RT onaylı (saat)", ondalik(oz.onayliRtDk)],
+    ["Onaysız fazla çalışma (saat, ücrete girmez)", ondalik(oz.onaysizDk)],
   ];
   for (const [a, v] of ozet) s.push({ Bölüm: "Özet", Kalem: a, Değer: v, Açıklama: "" });
   for (const [a, t, i] of hesapKalemleri(d)) s.push({ Bölüm: "Ücret", Kalem: a, Değer: i === "-" ? -t : t, Açıklama: i === "=" ? "Toplam" : "" });

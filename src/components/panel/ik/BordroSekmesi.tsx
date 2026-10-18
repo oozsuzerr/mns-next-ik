@@ -80,9 +80,10 @@ const SUTUNLAR: Sutun[] = [
   { id: "ucsIzin", ad: "Ücsz. izin", grup: "Gün", acik: false, aciklama: "Ücretsiz izin", deger: (s) => s.oz.ucretsizIzin },
   { id: "nm", ad: "NM", grup: "Saat", acik: false, aciklama: "Normal mesai (saat)", deger: (s) => ondalik(s.oz.normalDk) },
   { id: "ec", ad: "EÇ", grup: "Saat", acik: false, aciklama: "Eksik çalışma (saat)", deger: (s) => -ondalik(s.oz.eksikDk) },
-  { id: "fm", ad: "FM", grup: "Saat", acik: false, aciklama: "Plandan fazla çalışma (saat)", deger: (s) => ondalik(s.oz.fazlaDk) },
-  { id: "ht", ad: "HT", grup: "Saat", acik: false, aciklama: "Hafta tatili çalışması (saat)", deger: (s) => ondalik(s.oz.htDk) },
-  { id: "rt", ad: "RT", grup: "Saat", acik: false, aciklama: "Resmî tatil çalışması (saat)", deger: (s) => ondalik(s.oz.rtDk) },
+  { id: "fm", ad: "FM", grup: "Saat", acik: false, aciklama: "Onaylı fazla mesai, iş günü (saat)", deger: (s) => ondalik(s.oz.onayliFazlaDk) },
+  { id: "ht", ad: "HT", grup: "Saat", acik: false, aciklama: "Onaylı mesai, hafta tatili (saat)", deger: (s) => ondalik(s.oz.onayliHtDk) },
+  { id: "rt", ad: "RT", grup: "Saat", acik: false, aciklama: "Onaylı mesai, resmî tatil (saat)", deger: (s) => ondalik(s.oz.onayliRtDk) },
+  { id: "onaysiz", ad: "Onaysız", grup: "Saat", acik: false, aciklama: "Fazla/tatilde çalışılıp onaylanmamış süre (saat; ücrete girmez)", deger: (s) => ondalik(s.oz.onaysizDk) },
   { id: "ucretBrut", ad: "Ücret brüt", grup: "Ücret", acik: true, deger: (s) => s.b && s.b.ucretBrut + s.b.tatilUcreti, tl: true },
   { id: "kesinti", ad: "Eksik kesinti", grup: "Ücret", acik: true, deger: (s) => s.b && -s.b.eksikKesinti, tl: true },
   { id: "mesai", ad: "Mesai brüt", grup: "Ücret", acik: true, deger: (s) => s.b && s.b.mesai.toplam, tl: true },
@@ -168,10 +169,6 @@ export default function BordroSekmesi({
   }, [ekleriYukle]);
 
   const satirlar: Satir[] = useMemo(() => {
-    const mesaiDk = new Map<string, number>();
-    for (const t of mesaiTalepleri) {
-      if (t.durum === "ONAYLANDI" && t.tarih.startsWith(seciliAy)) mesaiDk.set(t.personel_id, (mesaiDk.get(t.personel_id) ?? 0) + t.sure_dk);
-    }
     const ayinOdemesi = odemeler?.ay === seciliAy ? odemeler : null;
     const ayinEkleri = ekler?.ay === seciliAy ? ekler.liste : [];
     const kurallar = veri.ayarlar.kurallar;
@@ -179,7 +176,8 @@ export default function BordroSekmesi({
       .filter((p) => p.sgkPrimGun > 0 || p.toplamCalismaDk > 0)
       .map((p) => {
         const u = veri.ucretler.get(p.id);
-        const oz = gunOzeti(p, kurallar.eksikToleransDk);
+        // Mesai yalnızca müdürün onayladığı taleplerden (onay bekleyen ve reddedilen girmez)
+        const oz = gunOzeti(p, kurallar.eksikToleransDk, mesaiTalepleri);
         const ek = ayinEkleri.filter((e) => e.personel_id === p.id);
         const primGun = gunModu === "tam" ? 30 : p.sgkPrimGun;
         const nedenler = [
@@ -199,11 +197,12 @@ export default function BordroSekmesi({
                 eksikSaat: gunModu === "tam" ? 0 : saat(oz.kesintiliEksikDk),
                 tatilGun: oz.htGun + oz.rtGun,
                 mesaiSaatleri: {
-                  fazla_mesai: saat(mesaiDk.get(p.id) ?? 0),
-                  fazla_calisma: saat(oz.fazlaDk),
-                  hafta_tatili: saat(p.haftaTatiliMesaiDk),
-                  resmi_tatil: saat(p.resmiTatilMesaiDk),
-                  plan_disi: saat(p.planDisiMesaiDk),
+                  fazla_mesai: saat(oz.onayliFazlaDk),
+                  hafta_tatili: saat(oz.onayliHtDk),
+                  resmi_tatil: saat(oz.onayliRtDk),
+                  // Puantajdaki onaysız çalışma ücrete girmez
+                  fazla_calisma: 0,
+                  plan_disi: 0,
                 },
                 ekVergili: ek.filter((e) => e.vergili).reduce((t, e) => t + e.tutar, 0),
                 ekVergisiz: ek.filter((e) => !e.vergili).reduce((t, e) => t + e.tutar, 0),
@@ -433,7 +432,7 @@ export default function BordroSekmesi({
           </div>
           <p className="m3 text-xs">
             Tahminidir, resmî bordro yerine geçmez. Gelir vergisi, yılın önceki aylarında da aynı ücretin ödendiği varsayımıyla kümülatif hesaplanır;
-            teşvik, BES, icra gibi kalemler yoktur. Saatler ondalıktır. Saatlik ücret aylık brüt / {veri.ayarlar.yasal.saatBoleni}. Satıra tıklayınca kişi
+            teşvik, BES, icra gibi kalemler yoktur. Mesai, avans ve masraf yalnızca onaylananlardır. Saatler ondalıktır. Saatlik ücret aylık brüt / {veri.ayarlar.yasal.saatBoleni}. Satıra tıklayınca kişi
             dökümü, ek kazançlar ve gün gün puantaj açılır; sütunları &quot;Sütunlar&quot;dan seçebilirsiniz.
           </p>
         </>
@@ -544,10 +543,11 @@ function BordroDetay({
     ["Üc. izin", oz.ucretliIzin],
     ["Ücsz. izin", oz.ucretsizIzin],
     ["NM", saatYaz(ondalik(oz.normalDk))],
-    ["FM", saatYaz(ondalik(oz.fazlaDk))],
+    ["FM onaylı", saatYaz(ondalik(oz.onayliFazlaDk))],
     ["EÇ", saatYaz(-ondalik(oz.eksikDk))],
-    ["HT sa", saatYaz(ondalik(oz.htDk))],
-    ["RT sa", saatYaz(ondalik(oz.rtDk))],
+    ["HT onaylı", saatYaz(ondalik(oz.onayliHtDk))],
+    ["RT onaylı", saatYaz(ondalik(oz.onayliRtDk))],
+    ["Onaysız", saatYaz(ondalik(oz.onaysizDk))],
   ];
 
   return (
@@ -822,7 +822,9 @@ function AyarFormu({ veri, firmaId }: { veri: BordroVerisi; firmaId: string | nu
                 onChange={(e) => setKalemler(kalemler.map((x, j) => (j === i ? { ...x, kaynak: e.target.value as MesaiKaynagi } : x)))}
                 aria-label="Saat kaynağı"
               >
-                {(Object.keys(MESAI_KAYNAKLARI) as MesaiKaynagi[]).map((m) => (
+                {(Object.keys(MESAI_KAYNAKLARI) as MesaiKaynagi[])
+                  .filter((m) => !MESAI_KAYNAKLARI[m].eski || m === k.kaynak)
+                  .map((m) => (
                   <option key={m} value={m}>
                     {MESAI_KAYNAKLARI[m].ad}
                   </option>
@@ -842,17 +844,20 @@ function AyarFormu({ veri, firmaId }: { veri: BordroVerisi; firmaId: string | nu
               <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => setKalemler(kalemler.filter((_, j) => j !== i))} aria-label="Kalemi sil">
                 <Ikon ad="cop" boyut={15} />
               </button>
+              {k.aktif && MESAI_KAYNAKLARI[k.kaynak].eski && (
+                <span className="w-full text-xs" style={{ color: "var(--uyari)" }}>
+                  Bu kaynak onaysız çalışmaya dayandığı için artık ücrete girmez; kaynağı onaylı mesai olarak değiştirin ya da kalemi silin.
+                </span>
+              )}
               {k.aktif && kaynakSayisi(k.kaynak) > 1 && <span className="w-full text-xs" style={{ color: "var(--uyari)" }}>Bu kaynakta birden çok aktif kalem var; tutarlar toplanır.</span>}
             </li>
           ))}
           {kalemler.length === 0 && <li className="m3 text-sm">Mesai kalemi yok; mesailer ücrete eklenmez.</li>}
         </ul>
-        {kaynakSayisi("fazla_mesai") > 0 && (kaynakSayisi("plan_disi") > 0 || kaynakSayisi("fazla_calisma") > 0) && (
-          <p className="text-xs" style={{ color: "var(--uyari)" }}>
-            Onaylı fazla mesai ile puantajdaki fazla / plan dışı çalışma aynı saatleri içerebilir; ikisini birden açarsanız mesai iki kez ödenmiş görünebilir.
-            Mesaiyi talep onayıyla yönetiyorsanız yalnızca &quot;Onaylı fazla mesai&quot;yi, talep kullanmıyorsanız yalnızca &quot;Puantajdaki fazla çalışma&quot;yı açın.
-          </p>
-        )}
+        <p className="m3 text-xs">
+          Mesai ücretine yalnızca müdürün onayladığı fazla mesai talepleri girer. Talebin tarihi iş günüyse &quot;iş günü&quot;, hafta tatili ya da çalışılmayan
+          günse &quot;hafta tatili&quot;, resmî tatilse &quot;resmî tatil&quot; kalemiyle ücretlendirilir. Puantajda görünen onaysız fazla çalışma ücrete girmez.
+        </p>
       </section>
 
       <section className="panel space-y-4 p-5">

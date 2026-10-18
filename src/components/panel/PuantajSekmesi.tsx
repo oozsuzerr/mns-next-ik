@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { PuantajSatiri } from "../../lib/puantaj";
+import { onayliMesai, type MesaiTalepOzu } from "../../lib/puantajCetveli";
 import { saatDakika } from "../../lib/tarih";
 import { Avatar, Bos, Ikon, Iskelet, Rozet, type RozetTon } from "../ui";
 import PuantajCetveli from "./PuantajCetveli";
@@ -13,6 +14,7 @@ function Deger({ sayi, ton, birim = "gün" }: { sayi: number; ton: RozetTon; bir
 
 export default function PuantajSekmesi({
   liste,
+  mesaiTalepleri,
   seciliAy,
   onAyDegis,
   onSec,
@@ -22,6 +24,8 @@ export default function PuantajSekmesi({
   onKilit,
 }: {
   liste: PuantajSatiri[];
+  /** Fazla mesai talepleri: mesai sütunlarına yalnızca onaylananlar girer */
+  mesaiTalepleri: MesaiTalepOzu[];
   seciliAy: string;
   onAyDegis: (ay: string) => void;
   onSec: (id: string) => void;
@@ -36,6 +40,12 @@ export default function PuantajSekmesi({
   const [sadeceSorunlu, setSadeceSorunlu] = useState(false);
   // Özet: kişi başı toplamlar. Cetvel: kişiler × günler (plan ve gerçekleşen, ondalık saat)
   const [gorunum, setGorunum] = useState<"ozet" | "cetvel">("ozet");
+
+  // Müdürün onayladığı fazla mesai (iş günü + hafta tatili + resmî tatil), dk
+  const onayliToplam = (p: PuantajSatiri) => {
+    const o = onayliMesai(p, mesaiTalepleri);
+    return o.fazlaDk + o.htDk + o.rtDk;
+  };
 
   const gorunen = useMemo(() => {
     const q = ara.trim().toLocaleLowerCase("tr-TR");
@@ -52,9 +62,10 @@ export default function PuantajSekmesi({
       net: gorunen.reduce((t, p) => t + p.toplamCalismaDk, 0),
       devamsiz: gorunen.reduce((t, p) => t + p.devamsizGunler, 0),
       eksik: gorunen.reduce((t, p) => t + p.eksikGunler, 0),
-      mesai: gorunen.reduce((t, p) => t + p.planDisiMesaiDk, 0),
+      mesai: gorunen.reduce((t, p) => t + onayliToplam(p), 0),
     }),
-    [gorunen]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [gorunen, mesaiTalepleri]
   );
 
   return (
@@ -134,13 +145,13 @@ export default function PuantajSekmesi({
           </p>
         </div>
         <div>
-          <p className="m2 text-xs font-semibold">Plan dışı mesai (sa:dk)</p>
+          <p className="m2 text-xs font-semibold">Onaylı fazla mesai (sa:dk)</p>
           <p className="baslik-font sayi m1 mt-0.5 text-xl">{saatDakika(toplam.mesai)}</p>
         </div>
       </div>
 
       {gorunum === "cetvel" && gorunen.length > 0 ? (
-        <PuantajCetveli liste={gorunen} seciliAy={seciliAy} onSec={onSec} />
+        <PuantajCetveli liste={gorunen} talepler={mesaiTalepleri} seciliAy={seciliAy} onSec={onSec} />
       ) : (
       <div className="panel overflow-hidden">
         {yukleniyor && liste.length === 0 ? (
@@ -173,7 +184,7 @@ export default function PuantajSekmesi({
                     <th className="sag">Devamsız</th>
                     <th className="sag">Eksik</th>
                     <th className="sag">Net süre (sa:dk)</th>
-                    <th className="sag">Mesai (sa:dk)</th>
+                    <th className="sag">Onaylı mesai (sa:dk)</th>
                     <th className="sag">Gecikme (sa:dk)</th>
                   </tr>
                 </thead>
@@ -207,7 +218,7 @@ export default function PuantajSekmesi({
                         <Deger sayi={p.eksikGunler} ton="uyari" />
                       </td>
                       <td className="sag sayi m1 font-semibold">{saatDakika(p.toplamCalismaDk)}</td>
-                      <td className="sag sayi m2">{p.planDisiMesaiDk > 0 ? `+${saatDakika(p.planDisiMesaiDk)}` : "-"}</td>
+                      <td className="sag sayi m2">{onayliToplam(p) > 0 ? `+${saatDakika(onayliToplam(p))}` : "-"}</td>
                       <td className="sag sayi m2">{p.gecikmeDk > 0 ? saatDakika(p.gecikmeDk) : "-"}</td>
                     </tr>
                   ))}
@@ -251,7 +262,7 @@ export default function PuantajSekmesi({
       <p className="m3 text-xs leading-relaxed">
         Hesaplama; giriş-çıkış eşleştirmesini (gece vardiyası dahil), 5 dakikalık gecikme ve 15 dakikalık mesai
         toleransını, 4 saati aşan günlerde vardiya molasının düşülmesini ve vardiya planındaki hafta tatili (plan yoksa Kurallar bölümündeki çalışılmayan günler) ile resmi tatil ayrımını esas alır.
-        Plan dışı mesai vardiya bitişine göre hesaplanır. Yasal haftalık 45 saat sınırı ve zamlı ücret için bordro
+        Mesai sütunlarına ve ücrete yalnızca müdürün onayladığı fazla mesai talepleri girer; onaysız fazla çalışma bilgi amaçlıdır. Yasal haftalık 45 saat sınırı ve zamlı ücret için bordro
         öncesi mali müşavir onayı alın.
       </p>
     </div>

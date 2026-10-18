@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { aralikPuantajHesapla, aylikPuantajHesapla, type PuantajSatiri } from "../lib/puantaj";
-import { cetvelAktarimi } from "../lib/puantajCetveli";
+import { cetvelAktarimi, onayliMesai } from "../lib/puantajCetveli";
 import { disariAktar, type Bicim, type Satir } from "../lib/disaAktar";
 import {
   PERSONEL_KOLONLARI,
@@ -333,9 +333,9 @@ const CIKIS_EKSIK_GUN = 31;
 /** Puantaj raporunda dakika tutulup saat:dakika yazılan sütunlar */
 const PUANTAJ_SURE = [
   "Toplam Net Çalışma (sa:dk)",
-  "Plan Dışı Mesai (sa:dk)",
-  "Resmi Tatil Mesaisi (sa:dk)",
-  "Hafta Tatili Mesaisi (sa:dk)",
+  "Onaylı Fazla Mesai (sa:dk)",
+  "Onaylı Resmi Tatil Mesaisi (sa:dk)",
+  "Onaylı Hafta Tatili Mesaisi (sa:dk)",
   "Gecikme (sa:dk)",
 ] as const;
 const MESAI_SURE = "Süre (sa:dk)";
@@ -966,7 +966,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     return {
       baslik: k ? `Puantaj ve Devam Cetveli (${donem})` : `Aylık Puantaj ve Bordro Cetveli (${seciliAy})`,
       dosyaAdi: `${ek}_Puantaj_${donem}`,
-      veriler: dPuantaj.map((p, i) => ({
+      veriler: dPuantaj.map((p, i) => ({ p, i, o: onayliMesai(p, dMesai) })).map(({ p, i, o }) => ({
         Sıra: i + 1,
         Dönem: donem,
         "Sicil No": p.sicil_no,
@@ -984,9 +984,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         "Resmi Tatil Çalışma Günü": p.resmiTatilCalismalari,
         "Hafta Tatili Çalışma Günü": p.haftaTatiliCalismalari,
         [PUANTAJ_SURE[0]]: p.toplamCalismaDk,
-        [PUANTAJ_SURE[1]]: p.planDisiMesaiDk,
-        [PUANTAJ_SURE[2]]: p.resmiTatilMesaiDk,
-        [PUANTAJ_SURE[3]]: p.haftaTatiliMesaiDk,
+        [PUANTAJ_SURE[1]]: o.fazlaDk,
+        [PUANTAJ_SURE[2]]: o.rtDk,
+        [PUANTAJ_SURE[3]]: o.htDk,
         [PUANTAJ_SURE[4]]: p.gecikmeDk,
       })),
       sureSutunlari: [...PUANTAJ_SURE],
@@ -1008,10 +1008,6 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     // Özlük (unvan, ücret, IBAN): tablo yoksa ya da okunamazsa boş kalır
     const { data: ozlukD } = await supabase.from("personel_ozluk").select("personel_id, unvan, ucret, ucret_turu, iban");
     const ozluk = new Map(((ozlukD ?? []) as { personel_id: string; unvan: string | null; ucret: number | null; ucret_turu: string | null; iban: string | null }[]).map((o) => [o.personel_id, o]));
-    const mesaiDk = new Map<string, number>();
-    for (const t of mesaiTalepleri) {
-      if (t.durum === "ONAYLANDI" && t.tarih.startsWith(seciliAy)) mesaiDk.set(t.personel_id, (mesaiDk.get(t.personel_id) ?? 0) + t.sure_dk);
-    }
     // Avans ve masraf: o ayın tarihli, onaylanmış ya da ödenmiş kayıtları (tablo yoksa boş kalır)
     const { data: odemeD } = await supabase
       .from("odeme_talepleri")
@@ -1029,6 +1025,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     const veriler = filtrelenmisPuantaj.map((p, i) => {
       const k = kisiler.get(p.id);
       const o = ozluk.get(p.id);
+      // Yalnızca müdürün onayladığı fazla mesai talepleri (günün türüne göre)
+      const m = onayliMesai(p, mesaiTalepleri);
       return {
         Sıra: i + 1,
         Dönem: seciliAy,
@@ -1056,10 +1054,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         "SGK Eksik Gün Kodu": p.sgkEksikKodu,
         "SGK Prim Günü": p.sgkPrimGun,
         "Net Çalışma (saat)": saat(p.toplamCalismaDk),
-        "Onaylı Fazla Mesai (saat)": saat(mesaiDk.get(p.id) ?? 0),
-        "Plan Dışı Çalışma (saat)": saat(p.planDisiMesaiDk),
-        "Hafta Tatili Çalışma (saat)": saat(p.haftaTatiliMesaiDk),
-        "Resmi Tatil Çalışma (saat)": saat(p.resmiTatilMesaiDk),
+        "Onaylı Fazla Mesai (saat)": saat(m.fazlaDk),
+        "Onaylı Hafta Tatili Mesaisi (saat)": saat(m.htDk),
+        "Onaylı Resmi Tatil Mesaisi (saat)": saat(m.rtDk),
         "Gecikme (saat)": saat(p.gecikmeDk),
         "Avans (TL, kesilecek)": avans.get(p.id) ?? 0,
         "Masraf (TL, ödenecek)": masraf.get(p.id) ?? 0,
@@ -1161,7 +1158,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       return {
         baslik: `Puantaj Cetveli (${donem})`,
         dosyaAdi: `${ek}_Puantaj_Cetveli_${donem}`,
-        veriler: cetvelAktarimi(dPuantaj),
+        veriler: cetvelAktarimi(dPuantaj, k?.mesai ?? mesaiTalepleri),
       };
     }
     if (kod === "ayrintili") {
@@ -1804,6 +1801,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         {aktifSekme === "puantaj" && (
           <PuantajSekmesi
             liste={filtrelenmisPuantaj}
+            mesaiTalepleri={mesaiTalepleri}
             seciliAy={seciliAy}
             onAyDegis={ayDegistir}
             onSec={setSeciliPersonelId}

@@ -100,7 +100,6 @@ export default function MesaiSekmesi({
   /** Tahmini brüt mesai ücreti (genel yönetici, bordro modülü açık; ücret girilmemişse null) */
   brutHesap?: (personelId: string, dk: number) => number | null;
 }) {
-  const [sadeceOnayli, setSadeceOnayli] = useState(true);
   const [kararFiltre, setKararFiltre] = useState<"TUMU" | "ONAYLANDI" | "REDDEDILDI">("TUMU");
 
   const subede = (t: MesaiTalebi) => subeFiltre === "TUMU" || t.personeller?.varsayilan_sube_id === subeFiltre;
@@ -112,7 +111,8 @@ export default function MesaiSekmesi({
       (t) =>
         t.tarih.startsWith(seciliAy) &&
         (subeFiltre === "TUMU" || t.personeller?.varsayilan_sube_id === subeFiltre) &&
-        (sadeceOnayli ? t.durum === "ONAYLANDI" : t.durum !== "REDDEDILDI")
+        // Müdür onayı olmadan hiçbir mesai toplama ve ücrete girmez
+        t.durum === "ONAYLANDI"
     );
     const kisiye = new Map<string, MesaiTalebi[]>();
     for (const t of ayinkiler) kisiye.set(t.personel_id, [...(kisiye.get(t.personel_id) ?? []), t]);
@@ -129,7 +129,7 @@ export default function MesaiSekmesi({
         };
       })
       .sort((a, b) => b.toplamDk - a.toplamDk);
-  }, [talepler, personeller, seciliAy, subeFiltre, sadeceOnayli]);
+  }, [talepler, personeller, seciliAy, subeFiltre]);
 
   const genelToplam = ozet.reduce((a, k) => a + k.toplamDk, 0);
   const brutler = brutHesap ? ozet.map((k) => brutHesap(k.id, k.toplamDk)) : [];
@@ -175,14 +175,7 @@ export default function MesaiSekmesi({
             onChange={(e) => e.target.value && onAyDegis(e.target.value)}
             aria-label="Dönem"
           />
-          <button
-            type="button"
-            className={`btn btn-kucuk ${sadeceOnayli ? "btn-ana" : "btn-ikincil"}`}
-            aria-pressed={sadeceOnayli}
-            onClick={() => setSadeceOnayli(!sadeceOnayli)}
-          >
-            {sadeceOnayli ? "Yalnızca onaylı" : "Onaylı + bekleyen"}
-          </button>
+          <span className="m3 text-xs">Yalnızca onaylanan mesailer</span>
         </div>
         <div className="ozet-seridi mb-3">
           <div>

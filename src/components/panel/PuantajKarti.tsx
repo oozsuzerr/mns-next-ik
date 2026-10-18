@@ -52,9 +52,9 @@ export default function PuantajKarti({
 
       {(satir.planDisiMesaiDk > 0 || satir.resmiTatilMesaiDk > 0 || satir.haftaTatiliMesaiDk > 0 || satir.gecikmeDk > 0) && (
         <div className="mb-4 flex flex-wrap gap-2">
-          {satir.planDisiMesaiDk > 0 && <Rozet ton="izin">Plan dışı mesai {saatDakika(satir.planDisiMesaiDk)}</Rozet>}
-          {satir.resmiTatilMesaiDk > 0 && <Rozet ton="notr">Resmi tatil mesaisi {saatDakika(satir.resmiTatilMesaiDk)}</Rozet>}
-          {satir.haftaTatiliMesaiDk > 0 && <Rozet ton="notr">Hafta tatili mesaisi {saatDakika(satir.haftaTatiliMesaiDk)}</Rozet>}
+          {satir.planDisiMesaiDk > 0 && <Rozet ton="izin">Plan dışı çalışma {saatDakika(satir.planDisiMesaiDk)} (onaysız)</Rozet>}
+          {satir.resmiTatilMesaiDk > 0 && <Rozet ton="notr">Resmi tatil çalışması {saatDakika(satir.resmiTatilMesaiDk)}</Rozet>}
+          {satir.haftaTatiliMesaiDk > 0 && <Rozet ton="notr">Hafta tatili çalışması {saatDakika(satir.haftaTatiliMesaiDk)}</Rozet>}
           {satir.gecikmeDk > 0 && <Rozet ton="uyari">Toplam gecikme {saatDakika(satir.gecikmeDk)}</Rozet>}
         </div>
       )}

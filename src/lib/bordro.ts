@@ -52,12 +52,16 @@ export interface BordroAyarlari {
   kurallar: HesapKurallari;
 }
 
-export const MESAI_KAYNAKLARI: Record<MesaiKaynagi, { ad: string; aciklama: string }> = {
-  fazla_mesai: { ad: "Onaylı fazla mesai", aciklama: "Personelin bildirip yöneticinin onayladığı fazla mesai saatleri" },
-  fazla_calisma: { ad: "Puantajdaki fazla çalışma", aciklama: "İş günlerinde plandan fazla çalışılan saatler (talep gerekmez; onaylı mesaiyle birlikte açılırsa çift sayılabilir)" },
-  hafta_tatili: { ad: "Hafta tatili çalışması", aciklama: "Puantajda hafta tatili gününe düşen çalışma saatleri" },
-  resmi_tatil: { ad: "Resmî tatil çalışması", aciklama: "Puantajda resmî/bayram tatiline düşen çalışma saatleri" },
-  plan_disi: { ad: "Plan dışı çalışma", aciklama: "Puantajda vardiya dışında kalan çalışma (onaylı mesaiyle çakışabilir)" },
+/**
+ * Mesai saatleri yalnızca müdürün onayladığı fazla mesai taleplerinden gelir; talebin tarihine göre iş günü,
+ * hafta tatili ya da resmî tatil kaynağına ayrılır. "eski" kaynaklar (puantajdaki onaysız çalışma) artık ücrete girmez.
+ */
+export const MESAI_KAYNAKLARI: Record<MesaiKaynagi, { ad: string; aciklama: string; eski?: boolean }> = {
+  fazla_mesai: { ad: "Onaylı fazla mesai (iş günü)", aciklama: "Müdürün onayladığı, iş gününe düşen fazla mesai talepleri" },
+  hafta_tatili: { ad: "Onaylı mesai (hafta tatili)", aciklama: "Müdürün onayladığı, hafta tatili ya da çalışılmayan güne düşen mesai talepleri" },
+  resmi_tatil: { ad: "Onaylı mesai (resmî tatil)", aciklama: "Müdürün onayladığı, resmî/bayram tatiline düşen mesai talepleri" },
+  fazla_calisma: { ad: "Puantajdaki fazla çalışma (kullanılmıyor)", aciklama: "Onaysız olduğu için ücrete girmez", eski: true },
+  plan_disi: { ad: "Plan dışı çalışma (kullanılmıyor)", aciklama: "Onaysız olduğu için ücrete girmez", eski: true },
 };
 
 /**
@@ -89,8 +93,6 @@ export const VARSAYILAN_MESAI_KALEMLERI: MesaiKalemi[] = [
   { id: "fazla", ad: "Fazla mesai (%50 zamlı)", kaynak: "fazla_mesai", carpan: 1.5, aktif: true },
   { id: "hafta", ad: "Hafta tatili çalışması (%50 zamlı)", kaynak: "hafta_tatili", carpan: 1.5, aktif: true },
   { id: "resmi", ad: "Resmî tatil çalışması (ek 1 günlük ücret)", kaynak: "resmi_tatil", carpan: 1, aktif: true },
-  { id: "plandisi", ad: "Plan dışı çalışma", kaynak: "plan_disi", carpan: 1.5, aktif: false },
-  { id: "fazlacalisma", ad: "Puantajdaki fazla çalışma (%50 zamlı)", kaynak: "fazla_calisma", carpan: 1.5, aktif: false },
 ];
 
 export const VARSAYILAN_KURALLAR: HesapKurallari = { eksikSaatKesintisi: false, eksikToleransDk: 0, saatliktenTatilUcreti: true };

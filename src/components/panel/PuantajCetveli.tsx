@@ -3,7 +3,7 @@
 // Aylık puantaj cetveli: personeller satırda, günler sütunda; üstte plan, altta gerçekleşen fark (ondalık saat)
 import { useMemo, useState, type CSSProperties } from "react";
 import type { PuantajSatiri } from "../../lib/puantaj";
-import { cetvelAktarimi, cetvelSatiri, saatYaz, TON_ACIKLAMA, TOPLAM_SUTUNLARI, type HucreTon } from "../../lib/puantajCetveli";
+import { cetvelAktarimi, cetvelSatiri, saatYaz, TON_ACIKLAMA, TOPLAM_SUTUNLARI, type HucreTon, type MesaiTalepOzu } from "../../lib/puantajCetveli";
 import { disariAktar } from "../../lib/disaAktar";
 import { ayAdi } from "../../lib/tarih";
 import { Ikon, useBildirim } from "../ui";
@@ -24,17 +24,28 @@ const RENK: Record<HucreTon, CSSProperties> = {
 const kutu: CSSProperties = { borderRadius: 4, padding: "1px 4px", fontSize: 11, lineHeight: "16px", textAlign: "center", minWidth: 42, whiteSpace: "nowrap" };
 const SAYFA = 50;
 
-export default function PuantajCetveli({ liste, seciliAy, onSec }: { liste: PuantajSatiri[]; seciliAy: string; onSec: (id: string) => void }) {
+export default function PuantajCetveli({
+  liste,
+  talepler,
+  seciliAy,
+  onSec,
+}: {
+  liste: PuantajSatiri[];
+  /** Fazla mesai talepleri: toplamlara yalnızca onaylananlar girer */
+  talepler: MesaiTalepOzu[];
+  seciliAy: string;
+  onSec: (id: string) => void;
+}) {
   const { bildir } = useBildirim();
   const [sayfa, setSayfa] = useState(1);
-  const satirlar = useMemo(() => liste.map(cetvelSatiri), [liste]);
+  const satirlar = useMemo(() => liste.map((p) => cetvelSatiri(p, talepler)), [liste, talepler]);
   const sayfaSayisi = Math.max(1, Math.ceil(satirlar.length / SAYFA));
   const gecerli = Math.min(sayfa, sayfaSayisi);
   const gorunen = satirlar.slice((gecerli - 1) * SAYFA, gecerli * SAYFA);
   const basliklar = satirlar[0]?.hucreler.map((h) => ({ baslik: h.baslik, tarih: h.tarih })) ?? [];
 
   function excel() {
-    const h = disariAktar("xlsx", `Puantaj Cetveli (${ayAdi(seciliAy)})`, `Puantaj_Cetveli_${seciliAy}`, cetvelAktarimi(liste));
+    const h = disariAktar("xlsx", `Puantaj Cetveli (${ayAdi(seciliAy)})`, `Puantaj_Cetveli_${seciliAy}`, cetvelAktarimi(liste, talepler));
     if (h) bildir(h, "hata");
   }
 
@@ -118,7 +129,8 @@ export default function PuantajCetveli({ liste, seciliAy, onSec }: { liste: Puan
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <p className="m3">
-          Saatler ondalıktır (7.5 = 7 saat 30 dk). Üst satır planlanan, alt satır iş günlerinde plana göre fark, tatillerde çalışılan süredir. Toplam:{" "}
+          Saatler ondalıktır (7.5 = 7 saat 30 dk). Üst satır planlanan, alt satır iş günlerinde plana göre fark, tatillerde çalışılan süredir (fiilî çalışma). FM, HT ve RT toplamlarına yalnızca müdürün
+          onayladığı fazla mesai talepleri girer; onaylanmamış fazla çalışma ONYZ sütunundadır ve ücrete girmez. Toplam:{" "}
           {satirlar.length} personel.
         </p>
         {sayfaSayisi > 1 && (

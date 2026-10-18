@@ -25,14 +25,16 @@ export interface CetvelToplam {
   toplam: number;
   /** İş günlerinde plan kadar çalışılan (saat) */
   normal: number;
-  /** İş günlerinde plandan fazla (saat) */
+  /** Müdürün onayladığı fazla mesai, iş günü (saat) */
   fazla: number;
   /** İş günlerinde plandan eksik (saat, negatif) */
   eksik: number;
-  /** Hafta tatili ve çalışılmayan gün çalışması (saat) */
+  /** Onaylı mesai: hafta tatili ve çalışılmayan gün (saat) */
   ht: number;
-  /** Resmî tatil çalışması (saat) */
+  /** Onaylı mesai: resmî tatil (saat) */
   rt: number;
+  /** Plandan fazla / tatilde çalışılıp onaylanmamış süre (saat; ücrete girmez) */
+  onaysiz: number;
   izin: number;
   rapor: number;
   calisilanGun: number;
@@ -54,6 +56,41 @@ export const ondalik = (dk: number) => Math.round((dk / 60) * 100) / 100;
 
 /** 7.5 → "7.5", -0.45 → "-0.45" (ekranda nokta; görseldeki gibi) */
 export const saatYaz = (n: number) => String(Math.round(n * 100) / 100);
+
+/** Fazla mesai talebi (yalnızca durumu ONAYLANDI olanlar hesaba girer) */
+export interface MesaiTalepOzu {
+  personel_id: string;
+  tarih: string;
+  sure_dk: number;
+  durum: string;
+}
+
+export interface OnayliMesai {
+  /** İş gününe düşen onaylı fazla mesai (dk) */
+  fazlaDk: number;
+  /** Hafta tatili veya çalışılmayan güne düşen onaylı mesai (dk) */
+  htDk: number;
+  /** Resmî tatile düşen onaylı mesai (dk) */
+  rtDk: number;
+}
+
+/**
+ * Kişinin, puantajdaki günlere düşen ve müdürün onayladığı fazla mesai talepleri; günün türüne göre ayrılır.
+ * Onay bekleyen ya da reddedilen talepler ve puantajdaki onaysız fazla çalışma ücrete ve tablolara girmez.
+ */
+export function onayliMesai(p: PuantajSatiri, talepler: MesaiTalepOzu[]): OnayliMesai {
+  const tur = new Map(p.gunlukDetaylar.map((g) => [g.tarih, g.gunTuru]));
+  const o: OnayliMesai = { fazlaDk: 0, htDk: 0, rtDk: 0 };
+  for (const t of talepler) {
+    if (t.personel_id !== p.id || t.durum !== "ONAYLANDI") continue;
+    const gt = tur.get(t.tarih);
+    if (!gt) continue;
+    if (gt === "resmiTatil") o.rtDk += t.sure_dk;
+    else if (gt === "is") o.fazlaDk += t.sure_dk;
+    else o.htDk += t.sure_dk;
+  }
+  return o;
+}
 
 export const TON_ACIKLAMA: Record<Exclude<HucreTon, "bos" | "devam">, string> = {
   fazla: "Plandan fazla çalışma",
@@ -85,7 +122,7 @@ function hucre(g: GunDetay): Omit<CetvelHucre, "tarih" | "baslik"> {
   return t(null, "--:--", "bos");
 }
 
-export function cetvelSatiri(p: PuantajSatiri): CetvelSatiri {
+export function cetvelSatiri(p: PuantajSatiri, talepler: MesaiTalepOzu[] = []): CetvelSatiri {
   const toplam: CetvelToplam = {
     toplam: 0,
     normal: 0,
@@ -93,6 +130,7 @@ export function cetvelSatiri(p: PuantajSatiri): CetvelSatiri {
     eksik: 0,
     ht: 0,
     rt: 0,
+    onaysiz: 0,
     izin: 0,
     rapor: 0,
     calisilanGun: p.calisilanGunler,
@@ -120,20 +158,24 @@ export function cetvelSatiri(p: PuantajSatiri): CetvelSatiri {
   });
   toplam.toplam = ondalik(p.toplamCalismaDk);
   toplam.normal = ondalik(normalDk);
-  toplam.fazla = ondalik(fazlaDk);
+  // Mesai toplamları yalnızca onaylı taleplerden; hücrelerdeki fark ise fiilî çalışmadır (bilgi)
+  const onay = onayliMesai(p, talepler);
+  toplam.fazla = ondalik(onay.fazlaDk);
   toplam.eksik = ondalik(eksikDk);
-  toplam.ht = ondalik(htDk);
-  toplam.rt = ondalik(rtDk);
+  toplam.ht = ondalik(onay.htDk);
+  toplam.rt = ondalik(onay.rtDk);
+  toplam.onaysiz = ondalik(Math.max(0, fazlaDk + htDk + rtDk - onay.fazlaDk - onay.htDk - onay.rtDk));
   return { id: p.id, adSoyad: p.adSoyad, sicil: p.sicil_no, sube: p.subeAdi, hucreler, toplam };
 }
 
 export const TOPLAM_SUTUNLARI: { anahtar: keyof CetvelToplam; kisa: string; ad: string }[] = [
   { anahtar: "toplam", kisa: "TOP", ad: "Toplam çalışma (saat)" },
   { anahtar: "normal", kisa: "NM", ad: "Normal mesai: iş günlerinde plan kadar (saat)" },
-  { anahtar: "fazla", kisa: "FM", ad: "Fazla mesai: iş günlerinde plandan fazla (saat)" },
+  { anahtar: "fazla", kisa: "FM", ad: "Onaylı fazla mesai, iş günü (saat)" },
   { anahtar: "eksik", kisa: "EÇ", ad: "Eksik çalışma: iş günlerinde plandan eksik (saat)" },
-  { anahtar: "ht", kisa: "HT", ad: "Hafta tatili / çalışılmayan gün çalışması (saat)" },
-  { anahtar: "rt", kisa: "RT", ad: "Resmî tatil çalışması (saat)" },
+  { anahtar: "ht", kisa: "HT", ad: "Onaylı mesai, hafta tatili / çalışılmayan gün (saat)" },
+  { anahtar: "rt", kisa: "RT", ad: "Onaylı mesai, resmî tatil (saat)" },
+  { anahtar: "onaysiz", kisa: "ONYZ", ad: "Onaylanmamış fazla / tatil çalışması (saat; ücrete ve mesaiye girmez)" },
   { anahtar: "izin", kisa: "İZİN", ad: "İzinli gün" },
   { anahtar: "rapor", kisa: "RAP", ad: "Raporlu gün" },
   { anahtar: "calisilanGun", kisa: "TÇ", ad: "Çalışılan gün" },
@@ -142,10 +184,10 @@ export const TOPLAM_SUTUNLARI: { anahtar: keyof CetvelToplam; kisa: string; ad: 
 ];
 
 /** Excel/PDF için: kişi başına iki satır (Plan ve Gerçekleşen), gün sütunları ve toplamlar */
-export function cetvelAktarimi(liste: PuantajSatiri[]): Satir[] {
+export function cetvelAktarimi(liste: PuantajSatiri[], talepler: MesaiTalepOzu[] = []): Satir[] {
   const satirlar: Satir[] = [];
   for (const p of liste) {
-    const c = cetvelSatiri(p);
+    const c = cetvelSatiri(p, talepler);
     const plan: Satir = { "Ad Soyad": c.adSoyad, "Sicil No": c.sicil, Şube: c.sube, Satır: "Plan" };
     const ger: Satir = { "Ad Soyad": "", "Sicil No": "", Şube: "", Satır: "Gerçekleşen" };
     for (const h of c.hucreler) {
@@ -184,10 +226,16 @@ export interface GunOzeti {
   kesintiliEksikDk: number;
   htDk: number;
   rtDk: number;
+  /** Müdürün onayladığı mesai (dk): iş günü, hafta tatili, resmî tatil */
+  onayliFazlaDk: number;
+  onayliHtDk: number;
+  onayliRtDk: number;
+  /** Fiilen fazla/tatilde çalışılıp onaylanmamış süre (dk; ücrete girmez) */
+  onaysizDk: number;
 }
 
 /** Bordro için kişi başı gün ve süre özeti (eksikToleransDk: günde bu kadarlık eksik kesintiye girmez) */
-export function gunOzeti(p: PuantajSatiri, eksikToleransDk = 0): GunOzeti {
+export function gunOzeti(p: PuantajSatiri, eksikToleransDk = 0, talepler: MesaiTalepOzu[] = []): GunOzeti {
   const o: GunOzeti = {
     ayGun: p.gunlukDetaylar.length,
     sgkGun: p.sgkTabanGun,
@@ -205,6 +253,10 @@ export function gunOzeti(p: PuantajSatiri, eksikToleransDk = 0): GunOzeti {
     kesintiliEksikDk: 0,
     htDk: 0,
     rtDk: 0,
+    onayliFazlaDk: 0,
+    onayliHtDk: 0,
+    onayliRtDk: 0,
+    onaysizDk: 0,
   };
   const bas = p.iseGiris ?? "";
   for (const g of p.gunlukDetaylar) {
@@ -227,5 +279,10 @@ export function gunOzeti(p: PuantajSatiri, eksikToleransDk = 0): GunOzeti {
       } else o.normalDk += g.calismaDk;
     }
   }
+  const onay = onayliMesai(p, talepler);
+  o.onayliFazlaDk = onay.fazlaDk;
+  o.onayliHtDk = onay.htDk;
+  o.onayliRtDk = onay.rtDk;
+  o.onaysizDk = Math.max(0, o.fazlaDk + o.htDk + o.rtDk - onay.fazlaDk - onay.htDk - onay.rtDk);
   return o;
 }
