@@ -1485,6 +1485,26 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
   }
 
+  /** Puantajdaki onaysız fazla çalışmayı müdür onaylı fazla mesai olarak kaydeder (talep açılır ve hemen onaylanır) */
+  async function onaysizMesaiOnayla(t: { personelId: string; tarih: string; baslangic: string; bitis: string; neden: string }): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from("mesai_talepleri")
+        .insert({ personel_id: t.personelId, tarih: t.tarih, baslangic_saat: t.baslangic, bitis_saat: t.bitis, neden: t.neden })
+        .select("id")
+        .single();
+      if (error) throw error;
+      const { error: e2 } = await supabase.from("mesai_talepleri").update({ durum: "ONAYLANDI" }).eq("id", data.id);
+      if (e2) throw e2;
+      bildir("Fazla mesai onaylandı ve hesaplara eklendi.", "basari");
+      await yenile();
+      return true;
+    } catch (err) {
+      bildir(hataYaz(err), "hata");
+      return false;
+    }
+  }
+
   async function mesaiDurumGuncelle(id: string, yeniDurum: "ONAYLANDI" | "REDDEDILDI", not: string | null = null) {
     try {
       const { error } = await supabase.from("mesai_talepleri").update({ durum: yeniDurum, karar_notu: not }).eq("id", id);
@@ -2307,7 +2327,15 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
       {/* Pencereler */}
       {sifreAcik && <SifreDegistirFormu onKapat={() => setSifreAcik(false)} />}
-      {seciliSatir && <PuantajKarti satir={seciliSatir} seciliAy={seciliAy} onKapat={() => setSeciliPersonelId(null)} />}
+      {seciliSatir && (
+        <PuantajKarti
+          satir={seciliSatir}
+          seciliAy={seciliAy}
+          onKapat={() => setSeciliPersonelId(null)}
+          talepler={mesaiTalepleri}
+          onMesaiOnayla={yetkili("mesai") ? onaysizMesaiOnayla : undefined}
+        />
+      )}
 
       {form?.tur === "personel" && (
         <PersonelFormu subeler={subeler} vardiyalar={vardiyalar} onKapat={() => setForm(null)} onKayit={yenile} />
