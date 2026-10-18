@@ -34,6 +34,7 @@ export default function PersonelSekmesi({
   iceridekiIdler,
   onIzinBilgileri,
   onGorevBilgisi,
+  onTazminat,
   onOzluk,
   onYeni,
   onPin,
@@ -50,6 +51,8 @@ export default function PersonelSekmesi({
   onIzinBilgileri: (p: Personel) => void;
   /** Departman ve ünvan düzenleme ("personel" yetkisi) */
   onGorevBilgisi?: (p: Personel) => void;
+  /** Kıdem ve ihbar tazminatı hesabı (genel yönetici) */
+  onTazminat?: (p: Personel) => void;
   /** Yalnızca genel yönetici: özlük bilgileri ve belgeler */
   onOzluk?: (p: Personel) => void;
   /** Verilmezse (şube müdürü) ilgili düğmeler gizlenir */
@@ -186,6 +189,7 @@ export default function PersonelSekmesi({
             { ad: "İzin bilgileri", ikon: "takvim" as const, f: () => onIzinBilgileri(p) },
             onGorevBilgisi && { ad: "Departman ve ünvan", ikon: "personel" as const, f: () => onGorevBilgisi(p) },
             onOzluk && { ad: "Özlük ve belgeler", ikon: "rapor" as const, f: () => onOzluk(p) },
+            onTazminat && { ad: "Kıdem ve ihbar tazminatı", ikon: "rapor" as const, f: () => onTazminat(p) },
             onPin && { ad: "PIN ver / sıfırla", ikon: "anahtar" as const, f: () => onPin(p) },
             p.cihaz_id && onCihaz && { ad: "Telefon kilidini aç", ikon: "kilitac" as const, f: () => onCihaz(p) },
             onAktif && { ad: p.aktif ? "Pasife al" : "Aktif et", ikon: "guc" as const, f: () => onAktif(p) },

@@ -917,6 +917,7 @@ function AyarFormu({ veri, firmaId }: { veri: BordroVerisi; firmaId: string | nu
           {alan("İşsizlik işveren payı (%)", "issizlikIsveren")}
           {alan("Damga vergisi (binde)", "damgaBinde")}
           {alan("Saatlik ücret böleni", "saatBoleni", "Aylık ücret / bu sayı = saatlik ücret (30 × 7,5 = 225)")}
+          {alan("Kıdem tazminatı tavanı (TL)", "kidemTavani", "Ocak ve Temmuz'da güncellenir (2026/2. yarı: 73.729,84)")}
         </div>
         <div>
           <p className="etiket">Gelir vergisi dilimleri (yıllık kümülatif matrah)</p>

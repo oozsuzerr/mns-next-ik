@@ -22,6 +22,8 @@ export interface YasalParametreler {
   vergiDilimleri: { ust: number | null; oran: number }[];
   /** Aylık ücretin saatliğe çevrilmesi: aylık / bölen (İş Kanunu uygulaması: 30 gün × 7,5 saat = 225) */
   saatBoleni: number;
+  /** Kıdem tazminatı tavanı (yılda iki kez, Ocak ve Temmuz'da güncellenir) */
+  kidemTavani: number;
 }
 
 export type MesaiKaynagi = "fazla_mesai" | "fazla_calisma" | "hafta_tatili" | "resmi_tatil" | "plan_disi";
@@ -88,6 +90,8 @@ export const VARSAYILAN_YASAL: YasalParametreler = {
     { ust: null, oran: 40 },
   ],
   saatBoleni: 225,
+  // 1 Temmuz – 31 Aralık 2026
+  kidemTavani: 73729.84,
 };
 
 /** İş Kanunu'na göre yasal asgari çarpanlar (firma artırabilir) */

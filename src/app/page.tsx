@@ -41,6 +41,7 @@ import IkSekmesi, { ikBolumleri } from "../components/panel/ik/IkSekmesi";
 import RaporlarSekmesi from "../components/panel/RaporlarSekmesi";
 import AralikRaporFormu from "../components/panel/AralikRaporFormu";
 import KvkkAyari from "../components/panel/KvkkAyari";
+import TazminatHesabi from "../components/panel/TazminatHesabi";
 import { fazlaMesaiBrut, useBordroVerisi } from "../components/panel/ik/bordroVerisi";
 import { modulAcik } from "../lib/moduller";
 import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
@@ -325,6 +326,7 @@ type FormDurumu =
   | { tur: "cikisEksik" }
   | { tur: "izinBilgi"; hedef: Personel }
   | { tur: "gorevBilgi"; hedef: Personel }
+  | { tur: "tazminat"; hedef: Personel }
   | { tur: "cikis"; hedef: Personel }
   | { tur: "ozluk"; hedef: Personel }
   | { tur: "red"; talep: "izin" | "mesai"; id: string; ozet: string }
@@ -2085,6 +2087,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 onIzinBilgileri={(p) => setForm({ tur: "izinBilgi", hedef: p })}
                 onGorevBilgisi={yetkili("personel") ? (p) => setForm({ tur: "gorevBilgi", hedef: p }) : undefined}
                 onOzluk={genel ? (p) => setForm({ tur: "ozluk", hedef: p }) : undefined}
+                onTazminat={genel ? (p) => setForm({ tur: "tazminat", hedef: p }) : undefined}
                 onYeni={yetkili("personel") ? () => setForm({ tur: "personel" }) : undefined}
                 onPin={yetkili("pin") ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
                 onCihaz={yetkili("cihaz") ? cihazSifirla : undefined}
@@ -2316,6 +2319,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         <VardiyaFormu duzenlenen={form.duzenlenen} onKapat={() => setForm(null)} onKayit={yenile} />
       )}
       {form?.tur === "izin" && <IzinFormu personeller={personeller} onKapat={() => setForm(null)} onKayit={yenile} />}
+      {form?.tur === "tazminat" && (
+        <TazminatHesabi hedef={form.hedef} bakiye={bakiyeler[form.hedef.id]} firma={yetki.firma?.ad ?? ""} onKapat={() => setForm(null)} />
+      )}
       {form?.tur === "gorevBilgi" && <GorevBilgisiFormu hedef={form.hedef} onKapat={() => setForm(null)} onKayit={yenile} />}
       {form?.tur === "izinBilgi" && (
         <IzinBilgileriFormu
