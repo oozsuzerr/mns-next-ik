@@ -15,6 +15,8 @@ import MobilOdemeler from "../../components/mobil/MobilOdemeler";
 import MobilEgitimler from "../../components/mobil/MobilEgitimler";
 import MobilPerformans from "../../components/mobil/MobilPerformans";
 import MobilGorevler from "../../components/mobil/MobilGorevler";
+import KvkkOnay from "../../components/mobil/KvkkOnay";
+import MobilMaasOzeti from "../../components/mobil/MobilMaasOzeti";
 import { modulAcik } from "../../lib/moduller";
 import { olayBildir } from "../../lib/bildirim";
 import { anaEkrandaMi, cihazBilgisi, cihazKimligi, iosMu } from "../../lib/cihazKimligi";
@@ -285,6 +287,19 @@ function MobilGirisEkrani() {
       setModuller({ token, liste: error ? null : ((data as string[] | null) ?? []) })
     );
   }, [token]);
+  // Profil (ünvan) ve KVKK onayı; okunamazsa (eski sunucu) uygulama engellenmez
+  const [profil, setProfil] = useState<{
+    token: string;
+    veri: { unvan: string | null; firma: string; maas_ozeti: boolean; kvkk: { surum: number; metin: string | null; onayli: boolean } } | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    Promise.resolve(supabase.rpc("mobil_profil", { p_token: token })).then(({ data, error }) => setProfil({ token, veri: error ? null : data }));
+  }, [token]);
+  const profilHazir = !!token && profil?.token === token;
+  const kvkkBekliyor = profilHazir && !!profil?.veri && !profil.veri.kvkk.onayli;
+  // Konum izni KVKK onayından sonra istenir
+  const konumAcik = profilHazir && !kvkkBekliyor;
   const modulHazir = !!token && moduller?.token === token;
   const modul = (m: Parameters<typeof modulAcik>[1]) => modulHazir && modulAcik(moduller?.liste, m);
   const [mesaiAcik, setMesaiAcik] = useState(false);
@@ -382,8 +397,9 @@ function MobilGirisEkrani() {
     return () => clearInterval(z);
   }, []);
 
-  // GPS
+  // GPS (KVKK aydınlatma onayından sonra)
   useEffect(() => {
+    if (!konumAcik) return;
     if (!navigator.geolocation) {
       // Tarayıcıya özel değer (localStorage/saat/konum) sayfa hidrasyonundan sonra okunur; render sırasında okunamaz
       // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -401,7 +417,7 @@ function MobilGirisEkrani() {
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
     return () => navigator.geolocation.clearWatch(id);
-  }, []);
+  }, [konumAcik]);
 
   // En yakın şube (yalnızca ekranda göstermek için; kesin karar sunucuda verilir)
   const yakin = useMemo(() => {
@@ -836,6 +852,21 @@ function MobilGirisEkrani() {
   const bugun = yerelTarih();
   const bugunkuler = gecmis.filter((h) => yerelTarih(h.created_at) === bugun).slice().reverse();
 
+  // ---------- KVKK aydınlatma onayı ----------
+  if (kvkkBekliyor && profil?.veri && token) {
+    const v = profil.veri;
+    return (
+      <KvkkOnay
+        token={token}
+        firma={v.firma ?? firmaAd ?? ""}
+        surum={v.kvkk.surum}
+        metin={v.kvkk.metin}
+        onOnay={() => setProfil({ token, veri: { ...v, kvkk: { ...v.kvkk, onayli: true } } })}
+        onCikis={cikisYap}
+      />
+    );
+  }
+
   let kadranDurumu: KadranDurumu = "hazir";
   let ana = secilenIslem === "giris" ? "Giriş yap" : "Çıkış yap";
   let alt = yakin ? yakin.sube.ad : "";
@@ -885,6 +916,7 @@ function MobilGirisEkrani() {
             <p className="baslik-font m1 text-lg leading-tight">
               {personel.ad} {personel.soyad}
             </p>
+            {profil?.veri?.unvan && <p className="m3 text-xs">{profil.veri.unvan}</p>}
           </div>
         </div>
         <button type="button" className="btn btn-hayalet btn-ikon" onClick={cikisYap} aria-label="Çıkış yap">
@@ -1070,6 +1102,9 @@ function MobilGirisEkrani() {
 
       {/* Avans ve masraf */}
       {token && modul("odeme") && <MobilOdemeler token={token} />}
+
+      {/* Maaş özetim: firma açtıysa */}
+      {token && modul("bordro") && profil?.veri?.maas_ozeti && <MobilMaasOzeti token={token} />}
 
       {/* Mesai taleplerim */}
       {mesaiTalepleri && mesaiTalepleri.length > 0 && (

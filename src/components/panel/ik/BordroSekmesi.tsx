@@ -893,6 +893,16 @@ function AyarFormu({ veri, firmaId }: { veri: BordroVerisi; firmaId: string | nu
             <span className="m2 block text-xs">Her tatil günü için 7,5 saatlik ücret eklenir. Aylık, haftalık ve günlük ücrette tatil günleri zaten ücretin içindedir.</span>
           </span>
         </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={kurallar.personelMaasOzeti} onChange={(e) => setKurallar({ ...kurallar, personelMaasOzeti: e.target.checked })} />
+          <span>
+            <span className="m1 font-semibold">Personel mobilde kendi maaş özetini görsün</span>
+            <span className="m2 block text-xs">
+              Personel &quot;Maaş özetim&quot; bölümünde kendi ücretini, ayın onaylı mesaisini, ek kazançlarını, avansını ve tahmini netini görür (tam ay
+              varsayılır). Başkalarının bilgisini göremez.
+            </span>
+          </span>
+        </label>
       </section>
 
       <section className="panel space-y-4 p-5">

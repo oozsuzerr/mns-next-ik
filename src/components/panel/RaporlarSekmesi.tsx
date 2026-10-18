@@ -10,6 +10,7 @@ import { disariAktar, type Bicim, type Satir } from "../../lib/disaAktar";
 import { modulAcik, type Modul } from "../../lib/moduller";
 import { tutanakYazdir, type Zimmet } from "./ik/ZimmetSekmesi";
 import { ayrintilar, ozet as islemOzeti, TABLOLAR, type Kayit } from "./IslemGecmisi";
+import { sinirDurumu, yillikMesaiGetir, YILLIK_SINIR_DK } from "../../lib/yillikMesai";
 import { Ikon, Modal, useBildirim, type IkonAdi } from "../ui";
 
 export interface RaporVerisi {
@@ -149,12 +150,80 @@ export default function RaporlarSekmesi({
     { kod: "talepler", grup: "İzin ve fazla mesai", ad: "Onaylı izin ve raporlar (kayıt kayıt)", aciklama: "Onaylanmış bütün izin, rapor ve saatlik izin kayıtları tek tek.", donemli: mod === "aralik", tur: { tip: "tablo", uret: () => cekirdek("talepler", secilenAralik) } },
     { kod: "izinBakiye", grup: "İzin ve fazla mesai", ad: "Yıllık izin bakiyeleri", aciklama: "Kıdem, devreden, hak edilen, kullanılan ve kalan yıllık izin.", tur: { tip: "tablo", uret: () => cekirdek("izinBakiye") } },
     { kod: "izinDonem", grup: "İzin ve fazla mesai", ad: "Yıllık izin dönemleri", aciklama: "Her hizmet yılı için devreden, hak edilen, kullanılan, kalan ve dönemin durumu.", tur: { tip: "tablo", uret: () => cekirdek("izinDonem") } },
+    {
+      kod: "yillikMesai",
+      grup: "İzin ve fazla mesai",
+      ad: "Yıllık fazla mesai (270 saat sınırı)",
+      aciklama: "Seçili ayın yılında kişi başı onaylı fazla mesai, kalan süre ve sınır durumu (İş Kanunu m.41).",
+      tur: {
+        tip: "tablo",
+        uret: async () => {
+          const yil = Number((secilenAralik?.bit ?? seciliAy).slice(0, 4));
+          const h = await yillikMesaiGetir(yil);
+          const saat = (dk: number) => Math.round((dk / 60) * 100) / 100;
+          return {
+            baslik: `Yıllık Fazla Mesai ${yil} (270 saat)`,
+            dosyaAdi: `${ek}_Yillik_Fazla_Mesai_${yil}`,
+            veriler: personeller
+              .map((p) => ({ p, dk: h.get(p.id) ?? 0 }))
+              .filter((x) => x.dk > 0)
+              .sort((a, b) => b.dk - a.dk)
+              .map(({ p, dk }, i) => ({
+                Sıra: i + 1,
+                "Sicil No": p.sicil_no,
+                "Ad Soyad": `${p.ad} ${p.soyad}`,
+                Departman: p.departman ?? "",
+                Şube: p.subeler?.ad ?? "",
+                "Onaylı (saat)": saat(dk),
+                "Kalan (saat)": saat(Math.max(0, YILLIK_SINIR_DK - dk)),
+                Durum: sinirDurumu(dk) === "asti" ? "Sınır aşıldı" : sinirDurumu(dk) === "yaklasti" ? "Sınıra yaklaştı" : "Normal",
+              })),
+          };
+        },
+      },
+    },
     { kod: "mesai", grup: "İzin ve fazla mesai", ad: "Onaylı fazla mesailer", aciklama: "Dönemde müdürün onayladığı fazla mesailer ve süreleri.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("mesai", secilenAralik) } },
 
     // ------------------------------------------------------------ Personel
     { kod: "personel", grup: "Personel", ad: "Personel listesi", aciklama: "Bütün personel: sicil, T.C., şube, vardiya, giriş/çıkış tarihi, durum.", tur: { tip: "tablo", uret: () => cekirdek("personel") } },
     { kod: "vardiya", grup: "Personel", ad: "Vardiya tanımları", aciklama: "Vardiyalar, saatleri ve molaları.", tur: { tip: "tablo", uret: () => cekirdek("vardiya") } },
     { kod: "vardiyaPlan", grup: "Personel", ad: "Vardiya listesi (kim, hangi gün)", aciklama: "Dönemde her personelin gün gün vardiyası, saatleri ve gün türü (plan ya da varsayılan).", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("vardiyaPlan", secilenAralik) } },
+    {
+      kod: "kvkk",
+      grup: "Personel",
+      ad: "KVKK onay durumu",
+      aciklama: "Aktif personelin aydınlatma metnini hangi sürümde, ne zaman onayladığı; onaylamayanlar.",
+      tur: {
+        tip: "tablo",
+        uret: async () => {
+          const [{ data: b }, l] = await Promise.all([
+            supabase.rpc("kvkk_bilgisi"),
+            sorgu<{ personel_id: string; surum: number; onay_zamani: string }>(supabase.from("kvkk_onaylari").select("personel_id, surum, onay_zamani")),
+          ]);
+          const surum = (b as { surum?: number } | null)?.surum ?? 1;
+          const son = new Map<string, { surum: number; zaman: string }>();
+          for (const o of l) if ((son.get(o.personel_id)?.surum ?? 0) < o.surum) son.set(o.personel_id, { surum: o.surum, zaman: o.onay_zamani });
+          return {
+            baslik: `KVKK Onay Durumu (güncel sürüm ${surum})`,
+            dosyaAdi: `${ek}_KVKK_Onaylari`,
+            veriler: personeller
+              .filter((p) => p.aktif)
+              .map((p, i) => {
+                const o = son.get(p.id);
+                return {
+                  Sıra: i + 1,
+                  "Sicil No": p.sicil_no,
+                  "Ad Soyad": `${p.ad} ${p.soyad}`,
+                  Şube: p.subeler?.ad ?? "",
+                  "Onaylanan Sürüm": o?.surum ?? "",
+                  "Onay Tarihi": o ? `${yerelTarih(o.zaman)}` : "",
+                  Durum: o?.surum === surum ? "Güncel" : o ? "Eski sürüm (yeniden onay bekleniyor)" : "Onaylamadı",
+                };
+              }),
+          };
+        },
+      },
+    },
     {
       kod: "personelDetay",
       grup: "Personel",

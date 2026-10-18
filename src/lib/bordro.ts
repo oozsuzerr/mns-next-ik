@@ -44,6 +44,8 @@ export interface HesapKurallari {
   eksikToleransDk: number;
   /** Saatlik ücretlilere hafta tatili ve resmî tatil günleri için günlük ücret (7,5 saat) ödensin */
   saatliktenTatilUcreti: boolean;
+  /** Personel mobil uygulamada kendi tahmini maaş özetini görsün */
+  personelMaasOzeti: boolean;
 }
 
 export interface BordroAyarlari {
@@ -95,7 +97,7 @@ export const VARSAYILAN_MESAI_KALEMLERI: MesaiKalemi[] = [
   { id: "resmi", ad: "Resmî tatil çalışması (ek 1 günlük ücret)", kaynak: "resmi_tatil", carpan: 1, aktif: true },
 ];
 
-export const VARSAYILAN_KURALLAR: HesapKurallari = { eksikSaatKesintisi: false, eksikToleransDk: 0, saatliktenTatilUcreti: true };
+export const VARSAYILAN_KURALLAR: HesapKurallari = { eksikSaatKesintisi: false, eksikToleransDk: 0, saatliktenTatilUcreti: true, personelMaasOzeti: false };
 
 export const VARSAYILAN_BORDRO_AYARLARI: BordroAyarlari = { yasal: VARSAYILAN_YASAL, mesaiKalemleri: VARSAYILAN_MESAI_KALEMLERI, kurallar: VARSAYILAN_KURALLAR };
 

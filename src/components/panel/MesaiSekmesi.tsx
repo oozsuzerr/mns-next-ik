@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { sinirDurumu, yillikMesaiGetir, YILLIK_SINIR_DK } from "../../lib/yillikMesai";
 import type { MesaiTalebi, Personel } from "../../lib/tipler";
 import { GUN_ADLARI, ayAdi, haftaGunu, kisaTarih, saatDakika, yerelSaat, yerelTarih } from "../../lib/tarih";
 import { Avatar, Bos, Ikon, Rozet } from "../ui";
@@ -25,11 +26,16 @@ function TalepKarti({
   t,
   hareketler,
   onDurum,
+  yillikDk,
 }: {
   t: MesaiTalebi;
   hareketler: HareketOzet[];
   onDurum?: (id: string, durum: "ONAYLANDI" | "REDDEDILDI") => void;
+  /** Kişinin bu yıl onaylanmış fazla mesaisi (dk); 270 saat sınırı uyarısı için */
+  yillikDk?: number;
 }) {
+  const sonra = yillikDk == null ? null : yillikDk + t.sure_dk;
+  const sinir = sonra == null ? "normal" : sinirDurumu(sonra);
   const ad = t.personeller?.ad ?? "?";
   const soyad = t.personeller?.soyad ?? "";
   // O günün kayıtlı giriş/çıkışı: müdür beyanı sistem kaydıyla karşılaştırabilsin
@@ -52,6 +58,12 @@ function TalepKarti({
             </span>
           </div>
           <p className="m2 mt-1.5 text-sm">{t.neden}</p>
+          {sonra != null && (
+            <p className="mt-0.5 text-xs" style={{ color: sinir === "asti" ? "var(--hata)" : sinir === "yaklasti" ? "var(--uyari)" : "var(--m3)" }}>
+              Yıllık fazla mesai: {saatDakika(yillikDk!)} onaylı, onaylanırsa {saatDakika(sonra)} / 270 saat
+              {sinir === "asti" ? " · yasal sınır aşılır (İş Kanunu m.41)" : sinir === "yaklasti" ? " · sınıra yaklaşıyor" : ""}
+            </p>
+          )}
           <p className="m3 mt-0.5 text-xs">
             {gunun.length === 0
               ? "O gün için kayıtlı giriş/çıkış yok (ya da bu ay görünümünde değil)."
@@ -103,6 +115,20 @@ export default function MesaiSekmesi({
   const [kararFiltre, setKararFiltre] = useState<"TUMU" | "ONAYLANDI" | "REDDEDILDI">("TUMU");
 
   const subede = (t: MesaiTalebi) => subeFiltre === "TUMU" || t.personeller?.varsayilan_sube_id === subeFiltre;
+  // Seçili ayın yılındaki onaylı fazla mesai (270 saat sınırı); talepler değişince yeniden okunur
+  const yil = Number(seciliAy.slice(0, 4));
+  const [yillik, setYillik] = useState<{ yil: number; harita: Map<string, number> } | null>(null);
+  const onayliSayisi = talepler.filter((t) => t.durum === "ONAYLANDI").length;
+  useEffect(() => {
+    yillikMesaiGetir(yil).then((harita) => setYillik({ yil, harita }));
+  }, [yil, onayliSayisi]);
+  const yillikHarita = yillik?.yil === yil ? yillik.harita : null;
+  const sinirdakiler = yillikHarita
+    ? personeller
+        .filter((p) => (subeFiltre === "TUMU" || p.varsayilan_sube_id === subeFiltre) && sinirDurumu(yillikHarita.get(p.id) ?? 0) !== "normal")
+        .map((p) => ({ p, dk: yillikHarita.get(p.id) ?? 0 }))
+        .sort((a, b) => b.dk - a.dk)
+    : [];
   const bekleyen = talepler.filter((t) => t.durum === "BEKLEMEDE" && subede(t));
 
   // Seçili ayın kişi bazında özeti
@@ -146,6 +172,20 @@ export default function MesaiSekmesi({
 
   return (
     <div className="space-y-8">
+      {sinirdakiler.length > 0 && (
+        <div className="panel flex items-start gap-3 px-5 py-4" style={{ borderColor: sinirdakiler.some((x) => x.dk > YILLIK_SINIR_DK) ? "var(--hata)" : "var(--uyari)" }}>
+          <Ikon ad="uyari" boyut={18} className="mt-0.5 flex-none" />
+          <div className="text-sm">
+            <p className="m1 font-semibold">{yil} yılı fazla mesai sınırı (270 saat)</p>
+            <p className="m2 mt-1">
+              {sinirdakiler
+                .map((x) => `${x.p.ad} ${x.p.soyad}: ${saatDakika(x.dk)}${x.dk > YILLIK_SINIR_DK ? " (aştı)" : ""}`)
+                .join(", ")}
+            </p>
+            <p className="m3 mt-1 text-xs">İş Kanunu m.41 uyarınca yıllık fazla çalışma 270 saati geçemez. Sayıma yalnızca onaylanan mesailer girer.</p>
+          </div>
+        </div>
+      )}
       <section>
         <h3 className="baslik-font m1 mb-3 flex items-center gap-2 text-lg">
           Onay bekleyen fazla mesailer
@@ -157,7 +197,7 @@ export default function MesaiSekmesi({
           ) : (
             <ul className="liste">
               {bekleyen.map((t) => (
-                <TalepKarti key={t.id} t={t} hareketler={hareketler} onDurum={onDurum} />
+                <TalepKarti key={t.id} t={t} hareketler={hareketler} onDurum={onDurum} yillikDk={yillikHarita ? (yillikHarita.get(t.personel_id) ?? 0) : undefined} />
               ))}
             </ul>
           )}
@@ -206,6 +246,7 @@ export default function MesaiSekmesi({
                         <span className="m1 block truncate font-semibold">{k.ad}</span>
                         <span className="m3 block text-xs">
                           {k.sicil}, {k.gun} gün
+                          {yillikHarita && ` · yıl: ${saatDakika(yillikHarita.get(k.id) ?? 0)} / 270 sa`}
                         </span>
                       </span>
                       <span className="text-right">

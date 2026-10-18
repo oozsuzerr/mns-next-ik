@@ -40,6 +40,7 @@ import SubelerSekmesi from "../components/panel/SubelerSekmesi";
 import IkSekmesi, { ikBolumleri } from "../components/panel/ik/IkSekmesi";
 import RaporlarSekmesi from "../components/panel/RaporlarSekmesi";
 import AralikRaporFormu from "../components/panel/AralikRaporFormu";
+import KvkkAyari from "../components/panel/KvkkAyari";
 import { fazlaMesaiBrut, useBordroVerisi } from "../components/panel/ik/bordroVerisi";
 import { modulAcik } from "../lib/moduller";
 import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
@@ -2178,7 +2179,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 onKayit={yenile}
               />
             ) : vardiyaGorunum === "kurallar" ? (
-              <AyarlarSekmesi key={JSON.stringify(ayarlar)} ayarlar={ayarlar} duzenlenebilir={genel} onKayit={yenile} />
+              <div className="space-y-6">
+                <AyarlarSekmesi key={JSON.stringify(ayarlar)} ayarlar={ayarlar} duzenlenebilir={genel} onKayit={yenile} />
+                {genel && <KvkkAyari personeller={personeller} />}
+              </div>
             ) : vardiyaGorunum === "plan" ? (
               <VardiyaPlani
                 personeller={personeller}
