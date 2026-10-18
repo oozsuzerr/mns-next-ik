@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { aralikPuantajHesapla, aylikPuantajHesapla, type PuantajSatiri } from "../lib/puantaj";
+import { cetvelAktarimi } from "../lib/puantajCetveli";
 import { disariAktar, type Bicim, type Satir } from "../lib/disaAktar";
 import {
   PERSONEL_KOLONLARI,
@@ -1154,6 +1155,13 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               "Sonraki Hak Tarihi": b?.sonraki_hak_tarihi ?? "",
             };
           }),
+      };
+    }
+    if (kod === "cetvel") {
+      return {
+        baslik: `Puantaj Cetveli (${donem})`,
+        dosyaAdi: `${ek}_Puantaj_Cetveli_${donem}`,
+        veriler: cetvelAktarimi(dPuantaj),
       };
     }
     if (kod === "ayrintili") {

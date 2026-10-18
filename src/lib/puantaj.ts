@@ -1,6 +1,6 @@
 import { ayGunSayisi, GUN_ADLARI, gunStr, haftaGunu, planAni, saatDakika, yerelSaat, yerelTarih } from "./tarih";
 import { MAKS_VARDIYA_MS, mesaiSonSiniri } from "./mesai";
-import { gunPlani, planHaritasi, vardiyaAni, vardiyaCozucu, type PlanSatiri } from "./vardiyaPlani";
+import { gunPlani, netSureDk, planHaritasi, vardiyaAni, vardiyaCozucu, type PlanSatiri } from "./vardiyaPlani";
 import { ayarlariTamamla, DK_MS, type Ayarlar } from "./ayarlar";
 
 // ---------------------------------------------------------------------
@@ -67,6 +67,12 @@ export interface GunDetay {
   durum: string;
   not: string;
   tip: "calisma" | "eksik" | "rapor" | "izin" | "devamsiz" | "tatil" | "bos";
+  /** Planlanan net çalışma (dk; vardiya süresi eksi mola). Tatil, kadro öncesi ve çıkış sonrası 0 */
+  planDk: number;
+  /** Gerçekleşen net çalışma (dk) */
+  calismaDk: number;
+  /** Günün türü: iş günü, yasal hafta tatili, resmî tatil ya da firmanın çalışılmayan günü (ör. Cumartesi) */
+  gunTuru: "is" | "haftaTatili" | "resmiTatil" | "calismayan";
 }
 
 export interface PuantajSatiri {
@@ -427,7 +433,11 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       const yarimGun = yarimGunHaritasi.get(tarih);
       if (yarimGun) not = `${yarimGun}: 13:00 sonrası resmi tatil. ${not}`;
 
+      const kadroda = tarih >= kadroBaslangic && (!cikisTarihi || tarih <= cikisTarihi);
       detaylar.push({
+        planDk: isGunu && kadroda ? gp.vardiyalar.reduce((t, v) => t + netSureDk(v), 0) : 0,
+        calismaDk: netDk,
+        gunTuru: tatilAdi ? "resmiTatil" : yasalHaftaTatili ? "haftaTatili" : haftaTatili ? "calismayan" : "is",
         gun,
         tarih,
         gunAdi: GUN_ADLARI[hg],

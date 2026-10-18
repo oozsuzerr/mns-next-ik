@@ -113,6 +113,7 @@ export default function RaporlarSekmesi({
   const raporlar: Rapor[] = [
     // ------------------------------------------------------------ Puantaj ve devam
     { kod: "puantaj", grup: "Puantaj ve devam", ad: "Puantaj ve bordro cetveli", aciklama: "Kişi başı çalışılan, izinli, raporlu, devamsız günler; çalışma ve mesai süreleri.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("puantaj", secilenAralik) } },
+    { kod: "cetvel", grup: "Puantaj ve devam", ad: "Aylık puantaj cetveli", aciklama: "Personeller satırda, günler sütunda: planlanan ve gerçekleşen saat (ondalık), NM, FM, EÇ, HT, RT ve gün toplamları.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("cetvel", secilenAralik) } },
     { kod: "ayrintili", grup: "Puantaj ve devam", ad: "Ayrıntılı devam çizelgesi", aciklama: "Her personelin gün gün giriş, çıkış, net çalışma ve durumu.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("ayrintili", secilenAralik) } },
     { kod: "hareketler", grup: "Puantaj ve devam", ad: "Giriş-çıkış hareketleri", aciklama: "Bütün mobil ve manuel giriş/çıkış kayıtları, konum mesafesiyle.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("hareketler", secilenAralik) } },
     { kod: "gecikme", grup: "Puantaj ve devam", ad: "Geç kalma ve devamsızlık", aciklama: "Toplam gecikme süresi, devamsız ve eksik hareketli günler.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("gecikme", secilenAralik) } },

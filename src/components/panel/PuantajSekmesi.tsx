@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { PuantajSatiri } from "../../lib/puantaj";
 import { saatDakika } from "../../lib/tarih";
 import { Avatar, Bos, Ikon, Iskelet, Rozet, type RozetTon } from "../ui";
+import PuantajCetveli from "./PuantajCetveli";
 
 function Deger({ sayi, ton, birim = "gün" }: { sayi: number; ton: RozetTon; birim?: string }) {
   if (sayi <= 0) return <span className="m3">-</span>;
@@ -33,6 +34,8 @@ export default function PuantajSekmesi({
 }) {
   const [ara, setAra] = useState("");
   const [sadeceSorunlu, setSadeceSorunlu] = useState(false);
+  // Özet: kişi başı toplamlar. Cetvel: kişiler × günler (plan ve gerçekleşen, ondalık saat)
+  const [gorunum, setGorunum] = useState<"ozet" | "cetvel">("ozet");
 
   const gorunen = useMemo(() => {
     const q = ara.trim().toLocaleLowerCase("tr-TR");
@@ -57,6 +60,14 @@ export default function PuantajSekmesi({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
+        <div className="segment" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", width: 240 }} role="tablist" aria-label="Puantaj görünümü">
+          <button type="button" role="tab" aria-selected={gorunum === "ozet"} data-aktif={gorunum === "ozet"} onClick={() => setGorunum("ozet")}>
+            Özet
+          </button>
+          <button type="button" role="tab" aria-selected={gorunum === "cetvel"} data-aktif={gorunum === "cetvel"} onClick={() => setGorunum("cetvel")}>
+            Aylık cetvel
+          </button>
+        </div>
         <div className="arama-kutu min-w-[200px] flex-1 sm:max-w-xs">
           <Ikon ad="ara" boyut={16} />
           <input
@@ -128,6 +139,9 @@ export default function PuantajSekmesi({
         </div>
       </div>
 
+      {gorunum === "cetvel" && gorunen.length > 0 ? (
+        <PuantajCetveli liste={gorunen} seciliAy={seciliAy} onSec={onSec} />
+      ) : (
       <div className="panel overflow-hidden">
         {yukleniyor && liste.length === 0 ? (
           <div className="space-y-3 p-5">
@@ -232,6 +246,7 @@ export default function PuantajSekmesi({
           </>
         )}
       </div>
+      )}
 
       <p className="m3 text-xs leading-relaxed">
         Hesaplama; giriş-çıkış eşleştirmesini (gece vardiyası dahil), 5 dakikalık gecikme ve 15 dakikalık mesai
