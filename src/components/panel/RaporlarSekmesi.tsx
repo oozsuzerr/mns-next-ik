@@ -29,8 +29,10 @@ interface Rapor {
   grup: string;
   ad: string;
   aciklama: string;
-  /** Seçili aya göre mi */
+  /** Seçili aya ya da tarih aralığına göre süzülür */
   donemli?: boolean;
+  /** Yalnızca aylık alınabilir (bordro dosyaları) */
+  sadeceAylik?: boolean;
   modul?: Modul;
   sadeceGenel?: boolean;
   tur: Tur;
@@ -58,8 +60,8 @@ export default function RaporlarSekmesi({
   personeller: Personel[];
   seciliAy: string;
   onAyDegis: (ay: string) => void;
-  /** Ana sayfanın ürettiği çekirdek raporlar (puantaj, hareketler, personel...) */
-  cekirdek: (kod: string) => RaporVerisi;
+  /** Ana sayfanın ürettiği çekirdek raporlar (puantaj, hareketler, personel...); aralık verilirse o tarihler için */
+  cekirdek: (kod: string, aralik?: { bas: string; bit: string }) => Promise<RaporVerisi>;
   onBordroAktarim?: () => void;
   onIzinKarti: (p: Personel) => void;
   onGit: (sekme: Sekme, alt?: string) => void;
@@ -69,16 +71,36 @@ export default function RaporlarSekmesi({
   const [ara, setAra] = useState("");
   const [calisan, setCalisan] = useState<string | null>(null);
   const [kisiSecimi, setKisiSecimi] = useState<Rapor | null>(null);
+  // Dönem: seçili ay ya da serbest tarih aralığı
+  const [mod, setMod] = useState<"ay" | "aralik">("ay");
+  const [aralik, setAralik] = useState(() => ({ bas: `${yerelTarih().slice(0, 7)}-01`, bit: yerelTarih() }));
+  const aralikGecerli = aralik.bas && aralik.bit && aralik.bas <= aralik.bit;
+  const secilenAralik = mod === "aralik" && aralikGecerli ? aralik : undefined;
+  const donemEtiketi = secilenAralik ? `${kisaTarih(aralik.bas)} – ${kisaTarih(aralik.bit)}` : ayAdi(seciliAy);
   const kisiler = useMemo(() => new Map(personeller.map((p) => [p.id, p])), [personeller]);
   const ad = (id: string) => {
     const p = kisiler.get(id);
     return p ? `${p.ad} ${p.soyad}` : "-";
   };
   const sicil = (id: string) => kisiler.get(id)?.sicil_no ?? "-";
+  /** Dönemin ilk günü ve bitişten sonraki gün (dahil değil) */
   const ayAraligi = () => {
+    if (secilenAralik) {
+      const d = new Date(`${secilenAralik.bit}T12:00:00Z`);
+      d.setUTCDate(d.getUTCDate() + 1);
+      return { bas: secilenAralik.bas, son: d.toISOString().slice(0, 10) };
+    }
     const [y, m] = seciliAy.split("-").map(Number);
     return { bas: `${seciliAy}-01`, son: new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10) };
   };
+  /** Tarih aralığı seçiliyse tarihli kaydı aralıkla süzer (ay modunda tarihsiz raporlar bütün kayıtları verir) */
+  const aralikta = (tarih: string | null | undefined) => {
+    if (!secilenAralik) return true;
+    if (!tarih) return false;
+    const t = tarih.slice(0, 10);
+    return t >= secilenAralik.bas && t <= secilenAralik.bit;
+  };
+  const donemEki = secilenAralik ? `${secilenAralik.bas}_${secilenAralik.bit}` : seciliAy;
   const ek = `MNS_Next_IK_${yerelTarih()}`;
 
   /** Tablo sorgusu: hata varsa (modül kurulmamış vb.) anlaşılır mesajla durur */
@@ -90,20 +112,20 @@ export default function RaporlarSekmesi({
 
   const raporlar: Rapor[] = [
     // ------------------------------------------------------------ Puantaj ve devam
-    { kod: "puantaj", grup: "Puantaj ve devam", ad: "Aylık puantaj ve bordro cetveli", aciklama: "Kişi başı çalışılan, izinli, raporlu, devamsız günler; çalışma ve mesai süreleri.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("puantaj") } },
-    { kod: "ayrintili", grup: "Puantaj ve devam", ad: "Ayrıntılı devam çizelgesi", aciklama: "Her personelin gün gün giriş, çıkış, net çalışma ve durumu.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("ayrintili") } },
-    { kod: "hareketler", grup: "Puantaj ve devam", ad: "Giriş-çıkış hareketleri", aciklama: "Bütün mobil ve manuel giriş/çıkış kayıtları, konum mesafesiyle.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("hareketler") } },
-    { kod: "gecikme", grup: "Puantaj ve devam", ad: "Geç kalma ve devamsızlık", aciklama: "Toplam gecikme süresi, devamsız ve eksik hareketli günler.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("gecikme") } },
+    { kod: "puantaj", grup: "Puantaj ve devam", ad: "Puantaj ve bordro cetveli", aciklama: "Kişi başı çalışılan, izinli, raporlu, devamsız günler; çalışma ve mesai süreleri.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("puantaj", secilenAralik) } },
+    { kod: "ayrintili", grup: "Puantaj ve devam", ad: "Ayrıntılı devam çizelgesi", aciklama: "Her personelin gün gün giriş, çıkış, net çalışma ve durumu.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("ayrintili", secilenAralik) } },
+    { kod: "hareketler", grup: "Puantaj ve devam", ad: "Giriş-çıkış hareketleri", aciklama: "Bütün mobil ve manuel giriş/çıkış kayıtları, konum mesafesiyle.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("hareketler", secilenAralik) } },
+    { kod: "gecikme", grup: "Puantaj ve devam", ad: "Geç kalma ve devamsızlık", aciklama: "Toplam gecikme süresi, devamsız ve eksik hareketli günler.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("gecikme", secilenAralik) } },
     { kod: "gunluk", grup: "Puantaj ve devam", ad: "Günlük devam durumu (bugün)", aciklama: "Bugün içeride, çıkmış, izinli ve gelmeyen personel.", tur: { tip: "tablo", uret: () => cekirdek("gunluk") } },
     ...(onBordroAktarim
-      ? [{ kod: "bordroAktarim", grup: "Puantaj ve devam", ad: "Bordro aktarım dosyası", aciklama: "Muhasebe/bordro programına aktarım: SGK günleri, ücret, mesai saatleri, avans/masraf.", donemli: true, tur: { tip: "ozel" as const, calistir: onBordroAktarim } }]
+      ? [{ kod: "bordroAktarim", grup: "Puantaj ve devam", ad: "Bordro aktarım dosyası", aciklama: "Muhasebe/bordro programına aktarım: SGK günleri, ücret, mesai saatleri, avans/masraf.", donemli: true, sadeceAylik: true, tur: { tip: "ozel" as const, calistir: onBordroAktarim } }]
       : []),
-    { kod: "tahminiBordro", grup: "Puantaj ve devam", ad: "Tahmini bordro", aciklama: "Brüt, kesintiler, net ve işveren maliyeti (ekranında Excel).", modul: "bordro", sadeceGenel: true, tur: { tip: "git", sekme: "ik", alt: "bordro" } },
+    { kod: "tahminiBordro", grup: "Puantaj ve devam", ad: "Tahmini bordro", aciklama: "Brüt, kesintiler, net ve işveren maliyeti (ekranında Excel).", sadeceAylik: true, modul: "bordro", sadeceGenel: true, tur: { tip: "git", sekme: "ik", alt: "bordro" } },
 
     // ------------------------------------------------------------ İzin ve fazla mesai
-    { kod: "talepler", grup: "İzin ve fazla mesai", ad: "İzin ve rapor talepleri", aciklama: "Bütün izin, rapor ve saatlik izin kayıtları, onay durumlarıyla.", tur: { tip: "tablo", uret: () => cekirdek("talepler") } },
+    { kod: "talepler", grup: "İzin ve fazla mesai", ad: "İzin ve rapor talepleri", aciklama: "Bütün izin, rapor ve saatlik izin kayıtları, onay durumlarıyla.", donemli: mod === "aralik", tur: { tip: "tablo", uret: () => cekirdek("talepler", secilenAralik) } },
     { kod: "izinBakiye", grup: "İzin ve fazla mesai", ad: "Yıllık izin bakiyeleri", aciklama: "Kıdem, devreden, hak edilen, kullanılan ve kalan yıllık izin.", tur: { tip: "tablo", uret: () => cekirdek("izinBakiye") } },
-    { kod: "mesai", grup: "İzin ve fazla mesai", ad: "Fazla mesai talepleri", aciklama: "Ayın fazla mesai bildirimleri, süreleri ve kararları.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("mesai") } },
+    { kod: "mesai", grup: "İzin ve fazla mesai", ad: "Fazla mesai talepleri", aciklama: "Dönemin fazla mesai bildirimleri, süreleri ve kararları.", donemli: true, tur: { tip: "tablo", uret: () => cekirdek("mesai", secilenAralik) } },
 
     // ------------------------------------------------------------ Personel
     { kod: "personel", grup: "Personel", ad: "Personel listesi", aciklama: "Bütün personel: sicil, T.C., şube, vardiya, giriş/çıkış tarihi, durum.", tur: { tip: "tablo", uret: () => cekirdek("personel") } },
@@ -115,7 +137,7 @@ export default function RaporlarSekmesi({
       kod: "gorevler",
       grup: "İK işlemleri",
       ad: "Görevler",
-      aciklama: "Ayda verilen görevler, durumları, son tarihleri ve personel notları.",
+      aciklama: "Dönemde verilen görevler, durumları, son tarihleri ve personel notları.",
       donemli: true,
       modul: "gorev",
       tur: {
@@ -126,8 +148,8 @@ export default function RaporlarSekmesi({
             supabase.from("gorevler").select("*").gte("created_at", `${bas}T00:00:00+03:00`).lt("created_at", `${son}T00:00:00+03:00`).order("created_at")
           );
           return {
-            baslik: `Görevler (${seciliAy})`,
-            dosyaAdi: `${ek}_Gorevler_${seciliAy}`,
+            baslik: `Görevler (${donemEtiketi})`,
+            dosyaAdi: `${ek}_Gorevler_${donemEki}`,
             veriler: l.filter((g) => kisiler.has(g.personel_id)).map((g, i) => ({
               Sıra: i + 1,
               "Ad Soyad": ad(g.personel_id),
@@ -147,6 +169,7 @@ export default function RaporlarSekmesi({
     {
       kod: "zimmet",
       grup: "İK işlemleri",
+      donemli: mod === "aralik",
       ad: "Zimmet listesi",
       aciklama: "Personeldeki ve iade edilen bütün eşyalar.",
       modul: "zimmet",
@@ -157,7 +180,7 @@ export default function RaporlarSekmesi({
           return {
             baslik: "Zimmet Listesi",
             dosyaAdi: `${ek}_Zimmet`,
-            veriler: l.filter((z) => kisiler.has(z.personel_id)).map((z, i) => ({
+            veriler: l.filter((z) => kisiler.has(z.personel_id) && aralikta(z.teslim_tarihi)).map((z, i) => ({
               Sıra: i + 1,
               "Sicil No": sicil(z.personel_id),
               "Ad Soyad": ad(z.personel_id),
@@ -189,8 +212,8 @@ export default function RaporlarSekmesi({
             supabase.from("odeme_talepleri").select("*").gte("tarih", bas).lt("tarih", son).order("tarih")
           );
           return {
-            baslik: `Avans ve Masraf (${seciliAy})`,
-            dosyaAdi: `${ek}_Avans_Masraf_${seciliAy}`,
+            baslik: `Avans ve Masraf (${donemEtiketi})`,
+            dosyaAdi: `${ek}_Avans_Masraf_${donemEki}`,
             veriler: l.filter((o) => kisiler.has(o.personel_id)).map((o, i) => ({
               Sıra: i + 1,
               "Sicil No": sicil(o.personel_id),
@@ -211,6 +234,7 @@ export default function RaporlarSekmesi({
     {
       kod: "egitim",
       grup: "İK işlemleri",
+      donemli: mod === "aralik",
       ad: "Eğitim kayıtları",
       aciklama: "Kim hangi eğitimi ne zaman aldı, geçerlilik bitişleri.",
       modul: "egitim",
@@ -226,7 +250,7 @@ export default function RaporlarSekmesi({
           return {
             baslik: "Eğitim Kayıtları",
             dosyaAdi: `${ek}_Egitim`,
-            veriler: kayitlar.filter((k) => kisiler.has(k.personel_id)).map((k, i) => ({
+            veriler: kayitlar.filter((k) => kisiler.has(k.personel_id) && aralikta(k.tarih)).map((k, i) => ({
               Sıra: i + 1,
               "Sicil No": sicil(k.personel_id),
               "Ad Soyad": ad(k.personel_id),
@@ -246,6 +270,7 @@ export default function RaporlarSekmesi({
     {
       kod: "performans",
       grup: "İK işlemleri",
+      donemli: mod === "aralik",
       ad: "Performans sonuçları",
       aciklama: "Bütün dönemlerin değerlendirme puanları ve durumları.",
       modul: "performans",
@@ -261,7 +286,7 @@ export default function RaporlarSekmesi({
             baslik: "Performans Sonuçları",
             dosyaAdi: `${ek}_Performans`,
             veriler: d
-              .filter((x) => kisiler.has(x.personel_id))
+              .filter((x) => kisiler.has(x.personel_id) && aralikta(donem.get(x.donem_id)?.bitis))
               .sort((a, b) => (donem.get(b.donem_id)?.bitis ?? "").localeCompare(donem.get(a.donem_id)?.bitis ?? ""))
               .map((x, i) => ({
                 Sıra: i + 1,
@@ -281,6 +306,7 @@ export default function RaporlarSekmesi({
     {
       kod: "duyuru",
       grup: "İK işlemleri",
+      donemli: mod === "aralik",
       ad: "Duyuru okuma durumu",
       aciklama: "Her duyuru ve onu okuyan personel sayısı.",
       modul: "duyuru",
@@ -297,7 +323,7 @@ export default function RaporlarSekmesi({
           return {
             baslik: "Duyuru Okuma Durumu",
             dosyaAdi: `${ek}_Duyurular`,
-            veriler: d.map((x, i) => {
+            veriler: d.filter((x) => aralikta(yerelTarih(x.created_at))).map((x, i) => {
               const hedef = aktif.filter((p) => !x.sube_id || p.varsayilan_sube_id === x.sube_id).length;
               return { Sıra: i + 1, Tarih: yerelTarih(x.created_at), Duyuru: x.baslik, Önemli: x.onemli ? "Evet" : "", Okuyan: sayac.get(x.id) ?? 0, Hedef: hedef };
             }),
@@ -308,6 +334,7 @@ export default function RaporlarSekmesi({
     {
       kod: "adaylar",
       grup: "İK işlemleri",
+      donemli: mod === "aralik",
       ad: "Aday listesi",
       aciklama: "İlanlara göre adaylar, aşamaları ve puanları.",
       modul: "isealim",
@@ -322,7 +349,7 @@ export default function RaporlarSekmesi({
           return {
             baslik: "Aday Listesi",
             dosyaAdi: `${ek}_Adaylar`,
-            veriler: a.map((x, i) => ({
+            veriler: a.filter((x) => aralikta(x.basvuru)).map((x, i) => ({
               Sıra: i + 1,
               İlan: ilan.get(x.ilan_id)?.baslik ?? "",
               "İlan Durumu": ilan.get(x.ilan_id)?.durum ?? "",
@@ -372,16 +399,19 @@ export default function RaporlarSekmesi({
   async function tabloIndir(r: Rapor, bicim: Bicim) {
     if (r.tur.tip !== "tablo") return;
     setCalisan(r.kod + bicim);
+    const pencere = bicim === "pdf" ? window.open("", "_blank") : null;
     try {
       const v = await r.tur.uret();
       if (!v.veriler.length) {
-        bildir(`${r.ad}: ${r.donemli ? `${ayAdi(seciliAy)} için kayıt yok` : "henüz kayıt yok"}.`, "bilgi");
+        pencere?.close();
+        bildir(`${r.ad}: ${r.donemli ? `${donemEtiketi} için kayıt yok` : "henüz kayıt yok"}.`, "bilgi");
         return;
       }
-      const h = disariAktar(bicim, v.baslik, v.dosyaAdi, v.veriler, v.sureSutunlari);
+      const h = disariAktar(bicim, v.baslik, v.dosyaAdi, v.veriler, v.sureSutunlari, pencere);
       if (h) bildir(h, "hata");
       else bildir(`${r.ad} hazırlandı (${v.veriler.length} satır).`, "basari");
     } catch (err) {
+      pencere?.close();
       bildir(hataYaz(err), "hata");
     } finally {
       setCalisan(null);
@@ -395,13 +425,29 @@ export default function RaporlarSekmesi({
           <Ikon ad="ara" boyut={16} />
           <input className="girdi girdi-sik" placeholder="Rapor ara (ör. izin, mesai, zimmet)" value={ara} onChange={(e) => setAra(e.target.value)} aria-label="Rapor ara" />
         </div>
-        <label className="m2 ml-auto flex items-center gap-2 text-sm">
-          Dönem
-          <input type="month" className="girdi girdi-sik sayi" style={{ width: 170 }} value={seciliAy} onChange={(e) => e.target.value && onAyDegis(e.target.value)} aria-label="Dönem" />
-        </label>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <div className="segment" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", width: 220 }} role="radiogroup" aria-label="Dönem türü">
+            <button type="button" role="radio" aria-checked={mod === "ay"} data-aktif={mod === "ay"} onClick={() => setMod("ay")}>
+              Ay
+            </button>
+            <button type="button" role="radio" aria-checked={mod === "aralik"} data-aktif={mod === "aralik"} onClick={() => setMod("aralik")}>
+              Tarih aralığı
+            </button>
+          </div>
+          {mod === "ay" ? (
+            <input type="month" className="girdi girdi-sik sayi" style={{ width: 170 }} value={seciliAy} onChange={(e) => e.target.value && onAyDegis(e.target.value)} aria-label="Ay" />
+          ) : (
+            <>
+              <input type="date" className="girdi girdi-sik sayi" style={{ width: 150 }} value={aralik.bas} max={aralik.bit || undefined} onChange={(e) => setAralik({ ...aralik, bas: e.target.value })} aria-label="Başlangıç tarihi" />
+              <span className="m3">–</span>
+              <input type="date" className="girdi girdi-sik sayi" style={{ width: 150 }} value={aralik.bit} min={aralik.bas || undefined} onChange={(e) => setAralik({ ...aralik, bit: e.target.value })} aria-label="Bitiş tarihi" />
+            </>
+          )}
+        </div>
       </div>
+      {mod === "aralik" && !aralikGecerli && <p className="text-sm" style={{ color: "var(--hata)" }}>Başlangıç tarihi bitişten sonra olamaz.</p>}
       <p className="m3 text-xs">
-        Dönemli raporlar {ayAdi(seciliAy)} için hazırlanır. Üstteki şube seçimi puantaj, hareket, personel ve izin raporlarına uygulanır. Raporlar T.C.
+        Dönemli raporlar {donemEtiketi} için hazırlanır{mod === "aralik" ? "; bordro dosyaları yalnızca aylık alınır (Ay seçin)" : ""}. Üstteki şube seçimi puantaj, hareket, personel ve izin raporlarına uygulanır. Raporlar T.C.
         kimlik gibi kişisel veri içerebilir; paylaşırken dikkat edin.
       </p>
 
@@ -421,24 +467,27 @@ export default function RaporlarSekmesi({
                   <div className="flex-1">
                     <p className="m1 font-semibold">
                       {r.ad}
-                      {r.donemli && <span className="m3 ml-2 text-xs font-normal">{ayAdi(seciliAy)}</span>}
+                      {r.donemli && <span className="m3 ml-2 text-xs font-normal">{r.sadeceAylik ? ayAdi(seciliAy) : donemEtiketi}</span>}
                     </p>
                     <p className="m2 mt-1 text-sm">{r.aciklama}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {r.tur.tip === "tablo" && (
+                    {mod === "aralik" && r.sadeceAylik ? (
+                      <span className="m3 text-xs">Yalnızca aylık: üstten &quot;Ay&quot; seçin.</span>
+                    ) : null}
+                    {r.tur.tip === "tablo" && !(mod === "aralik" && r.sadeceAylik) && (
                       <>
-                        <button type="button" className="btn btn-ana btn-kucuk" disabled={!!calisan} onClick={() => tabloIndir(r, "xlsx")}>
+                        <button type="button" className="btn btn-ana btn-kucuk" disabled={!!calisan || (mod === "aralik" && !aralikGecerli)} onClick={() => tabloIndir(r, "xlsx")}>
                           <Ikon ad="indir" boyut={14} />
                           {calisan === r.kod + "xlsx" ? "Hazırlanıyor..." : "Excel"}
                         </button>
-                        <button type="button" className="btn btn-ikincil btn-kucuk" disabled={!!calisan} onClick={() => tabloIndir(r, "pdf")}>
+                        <button type="button" className="btn btn-ikincil btn-kucuk" disabled={!!calisan || (mod === "aralik" && !aralikGecerli)} onClick={() => tabloIndir(r, "pdf")}>
                           <Ikon ad="rapor" boyut={14} />
                           {calisan === r.kod + "pdf" ? "Hazırlanıyor..." : "PDF"}
                         </button>
                       </>
                     )}
-                    {r.tur.tip === "ozel" && (
+                    {r.tur.tip === "ozel" && !(mod === "aralik" && r.sadeceAylik) && (
                       <button
                         type="button"
                         className="btn btn-ana btn-kucuk"
@@ -456,7 +505,7 @@ export default function RaporlarSekmesi({
                         Personel seç ve yazdır
                       </button>
                     )}
-                    {r.tur.tip === "git" && (
+                    {r.tur.tip === "git" && !(mod === "aralik" && r.sadeceAylik) && (
                       <button
                         type="button"
                         className="btn btn-ikincil btn-kucuk"

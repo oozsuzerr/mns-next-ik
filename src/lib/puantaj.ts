@@ -121,6 +121,8 @@ export interface PuantajGirdi {
   /** Türkiye saatine göre bugün: "2026-10-13" */
   bugun: string;
   simdi: Date;
+  /** Verilirse yalnızca bu tarihler (dahil) sayılır; tarih aralığı raporları için */
+  aralik?: { bas: string; bit: string };
 }
 
 // ---------------------------------------------------------------------
@@ -255,6 +257,7 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
 
     for (let gun = 1; gun <= gunSayisi; gun++) {
       const tarih = gunStr(g.yil, g.ay, gun);
+      if (g.aralik && (tarih < g.aralik.bas || tarih > g.aralik.bit)) continue;
       const istihdamda = tarih >= sgkBaslangic && (!cikisTarihi || tarih <= cikisTarihi);
       if (istihdamda) istihdam++;
       const hg = haftaGunu(tarih);
@@ -477,4 +480,44 @@ export function aylikPuantajHesapla(g: PuantajGirdi): PuantajSatiri[] {
       gunlukDetaylar: detaylar,
     };
   });
+}
+
+/**
+ * Tarih aralığı puantajı (aylar arası olabilir): her ay aralıkla sınırlı hesaplanır, kişi başı toplanır.
+ * SGK gün alanları aylık kavramdır; aralık raporunda yalnızca bilgi amaçlı toplam olarak verilir.
+ */
+export function aralikPuantajHesapla(g: Omit<PuantajGirdi, "yil" | "ay" | "aralik"> & { bas: string; bit: string }): PuantajSatiri[] {
+  const toplam = new Map<string, PuantajSatiri>();
+  const sira: string[] = [];
+  let yil = Number(g.bas.slice(0, 4));
+  let ay = Number(g.bas.slice(5, 7));
+  const sonAy = g.bit.slice(0, 7);
+  for (let i = 0; i < 60; i++) {
+    const anahtar = `${yil}-${String(ay).padStart(2, "0")}`;
+    if (anahtar > sonAy) break;
+    for (const satir of aylikPuantajHesapla({ ...g, yil, ay, aralik: { bas: g.bas, bit: g.bit } })) {
+      const once = toplam.get(satir.id);
+      if (!once) {
+        toplam.set(satir.id, { ...satir, gunlukDetaylar: [...satir.gunlukDetaylar] });
+        sira.push(satir.id);
+        continue;
+      }
+      const sayisal: (keyof PuantajSatiri)[] = [
+        "calisilanGunler", "eksikGunler", "raporluGunler", "izinliGunler", "devamsizGunler", "yillikIzinGunler",
+        "ucretliIzinGunler", "ucretsizIzinGunler", "sgkTabanGun", "sgkEksikGun", "sgkPrimGun", "resmiTatilCalismalari",
+        "haftaTatiliCalismalari", "toplamCalismaDk", "planDisiMesaiDk", "resmiTatilMesaiDk", "haftaTatiliMesaiDk", "gecikmeDk",
+      ];
+      for (const k of sayisal) (once as unknown as Record<string, number>)[k] = (once[k] as number) + (satir[k] as number);
+      if (satir.sgkEksikKodu && !once.sgkEksikKodu.split(", ").includes(satir.sgkEksikKodu)) {
+        once.sgkEksikKodu = once.sgkEksikKodu ? `${once.sgkEksikKodu}, ${satir.sgkEksikKodu}` : satir.sgkEksikKodu;
+      }
+      once.gunlukDetaylar.push(...satir.gunlukDetaylar);
+    }
+    ay++;
+    if (ay > 12) {
+      ay = 1;
+      yil++;
+    }
+  }
+  return sira.map((id) => toplam.get(id)!);
 }

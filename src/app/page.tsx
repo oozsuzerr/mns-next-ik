@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
-import { aylikPuantajHesapla, type PuantajSatiri } from "../lib/puantaj";
+import { aralikPuantajHesapla, aylikPuantajHesapla, type PuantajSatiri } from "../lib/puantaj";
 import { disariAktar, type Bicim, type Satir } from "../lib/disaAktar";
 import {
   PERSONEL_KOLONLARI,
@@ -38,6 +38,7 @@ import PersonelSekmesi from "../components/panel/PersonelSekmesi";
 import SubelerSekmesi from "../components/panel/SubelerSekmesi";
 import IkSekmesi, { ikBolumleri } from "../components/panel/ik/IkSekmesi";
 import RaporlarSekmesi from "../components/panel/RaporlarSekmesi";
+import AralikRaporFormu from "../components/panel/AralikRaporFormu";
 import { fazlaMesaiBrut, useBordroVerisi } from "../components/panel/ik/bordroVerisi";
 import { modulAcik } from "../lib/moduller";
 import ResmiTatillerSekmesi from "../components/panel/ResmiTatillerSekmesi";
@@ -82,6 +83,15 @@ const SEKMELER: { id: Sekme; etiket: string; kisa: string; ikon: IkonAdi }[] = [
   // Yalnızca genel yönetici görür (bkz. gorunenSekmeler)
   { id: "subeler", etiket: "Şubeler", kisa: "Şube", ikon: "konum" },
 ];
+
+/** Rapor verisinin kaynağı: seçili ay yerine bir tarih aralığı (şube filtresi uygulanmış) */
+interface RaporKaynagi {
+  donem: string;
+  hareketler: Hareket[];
+  puantaj: PuantajSatiri[];
+  mesai: MesaiTalebi[];
+  izinler: Izin[];
+}
 
 /** Telefonda alt çubukta doğrudan duran sekmeler; diğerleri "Diğer" penceresinde */
 const ALT_CUBUK: Sekme[] = ["bakis", "puantaj", "talepler", "mesai"];
@@ -500,6 +510,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   const [vardiyaGorunum, setVardiyaGorunum] = useState<"plan" | "tanimlar" | "kurallar" | "tatiller">("plan");
   const [talepGorunum, setTalepGorunum] = useState<"izin" | "cihaz">("izin");
   const [digerAcik, setDigerAcik] = useState(false);
+  const [aralikFormu, setAralikFormu] = useState(false);
   const [sifreAcik, setSifreAcik] = useState(false);
   const [personelGorunum, setPersonelGorunum] = useState<"personel" | "kullanicilar" | "gecmis">("personel");
   // Yan menüden seçilen İK bölümü ve açık/kapalı menü grupları (kullanıcı açıp kapatmadıysa etkin öğenin grubu açıktır)
@@ -832,14 +843,20 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   // -------------------------------------------------------------------
   // Dışa aktarma
   // -------------------------------------------------------------------
-  function sekmeVerisi(sekme: Sekme = aktifSekme): { baslik: string; dosyaAdi: string; veriler: Satir[]; sureSutunlari?: string[] } {
+  function sekmeVerisi(sekme: Sekme = aktifSekme, k?: RaporKaynagi): { baslik: string; dosyaAdi: string; veriler: Satir[]; sureSutunlari?: string[] } {
     const ek = `MNS_Next_IK_${bugunTarih}`;
+    // Kaynak verilmezse seçili ay; verilirse tarih aralığının verisi (şube filtresi uygulanmış)
+    const donem = k?.donem ?? seciliAy;
+    const dHareket = k?.hareketler ?? ayHareketleri;
+    const dPuantaj = k?.puantaj ?? filtrelenmisPuantaj;
+    const dMesai = k?.mesai ?? mesaiTalepleri.filter((t) => t.tarih.startsWith(seciliAy));
+    const dIzin = k?.izinler ?? izinler;
 
     if (sekme === "genel") {
       return {
-        baslik: `PDKS Hareketleri (${seciliAy})`,
-        dosyaAdi: `${ek}_Hareketler_${seciliAy}`,
-        veriler: ayHareketleri.map((h, i) => ({
+        baslik: `PDKS Hareketleri (${donem})`,
+        dosyaAdi: `${ek}_Hareketler_${donem}`,
+        veriler: dHareket.map((h, i) => ({
           Sıra: i + 1,
           Tarih: yerelTarih(h.created_at),
           Saat: yerelSaat(h.created_at),
@@ -856,10 +873,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
     if (sekme === "mesai") {
       return {
-        baslik: `Fazla Mesai (${seciliAy})`,
-        dosyaAdi: `${ek}_FazlaMesai_${seciliAy}`,
-        veriler: mesaiTalepleri
-          .filter((t) => t.tarih.startsWith(seciliAy))
+        baslik: `Fazla Mesai (${donem})`,
+        dosyaAdi: `${ek}_FazlaMesai_${donem}`,
+        veriler: dMesai
           .filter((t) => seciliSubeFiltre === "TUMU" || t.personeller?.varsayilan_sube_id === seciliSubeFiltre)
           .sort((a, b) => a.tarih.localeCompare(b.tarih))
           .map((t, i) => ({
@@ -880,9 +896,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
     if (sekme === "talepler") {
       return {
-        baslik: "İzin ve Rapor Talepleri",
-        dosyaAdi: `${ek}_Izinler`,
-        veriler: izinler.map((iz, i) => ({
+        baslik: k ? `İzin ve Rapor Talepleri (${donem})` : "İzin ve Rapor Talepleri",
+        dosyaAdi: k ? `${ek}_Izinler_${donem}` : `${ek}_Izinler`,
+        veriler: dIzin.map((iz, i) => ({
           Sıra: i + 1,
           "Sicil No": iz.personeller?.sicil_no || "-",
           "Ad Soyad": `${iz.personeller?.ad || ""} ${iz.personeller?.soyad || ""}`.trim(),
@@ -944,11 +960,11 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
     // bakış ve puantaj sekmeleri puantaj raporu verir
     return {
-      baslik: `Aylık Puantaj ve Bordro Cetveli (${seciliAy})`,
-      dosyaAdi: `${ek}_Puantaj_${seciliAy}`,
-      veriler: filtrelenmisPuantaj.map((p, i) => ({
+      baslik: k ? `Puantaj ve Devam Cetveli (${donem})` : `Aylık Puantaj ve Bordro Cetveli (${seciliAy})`,
+      dosyaAdi: `${ek}_Puantaj_${donem}`,
+      veriler: dPuantaj.map((p, i) => ({
         Sıra: i + 1,
-        Dönem: seciliAy,
+        Dönem: donem,
         "Sicil No": p.sicil_no,
         "Ad Soyad": p.adSoyad,
         Departman: p.departman,
@@ -1051,8 +1067,10 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
   }
 
   /** Raporlar sayfasındaki çekirdek raporlar (seçili ay ve şube filtresiyle) */
-  function cekirdekRapor(kod: string): { baslik: string; dosyaAdi: string; veriler: Satir[]; sureSutunlari?: string[] } {
+  function cekirdekRapor(kod: string, k?: RaporKaynagi): { baslik: string; dosyaAdi: string; veriler: Satir[]; sureSutunlari?: string[] } {
     const ek = `MNS_Next_IK_${bugunTarih}`;
+    const donem = k?.donem ?? seciliAy;
+    const dPuantaj = k?.puantaj ?? filtrelenmisPuantaj;
     const sekmeye: Record<string, Sekme> = {
       puantaj: "puantaj",
       hareketler: "genel",
@@ -1062,7 +1080,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       vardiya: "vardiya",
       subeler: "subeler",
     };
-    if (sekmeye[kod]) return sekmeVerisi(sekmeye[kod]);
+    if (sekmeye[kod]) return sekmeVerisi(sekmeye[kod], k);
     if (kod === "gunluk") {
       const durumu = (id: string) =>
         bugunOzet.iceride.some((x) => x.id === id)
@@ -1093,9 +1111,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
     if (kod === "gecikme") {
       return {
-        baslik: `Geç Kalma ve Devamsızlık (${seciliAy})`,
-        dosyaAdi: `${ek}_Gecikme_${seciliAy}`,
-        veriler: filtrelenmisPuantaj
+        baslik: `Geç Kalma ve Devamsızlık (${donem})`,
+        dosyaAdi: `${ek}_Gecikme_${donem}`,
+        veriler: dPuantaj
           .filter((x) => x.gecikmeDk > 0 || x.devamsizGunler > 0 || x.eksikGunler > 0)
           .sort((a, b) => b.gecikmeDk - a.gecikmeDk)
           .map((x, i) => ({
@@ -1137,9 +1155,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
     if (kod === "ayrintili") {
       return {
-        baslik: `Ayrıntılı Devam Çizelgesi (${seciliAy})`,
-        dosyaAdi: `${ek}_Ayrintili_Devam_${seciliAy}`,
-        veriler: filtrelenmisPuantaj.flatMap((x) =>
+        baslik: `Ayrıntılı Devam Çizelgesi (${donem})`,
+        dosyaAdi: `${ek}_Ayrintili_Devam_${donem}`,
+        veriler: dPuantaj.flatMap((x) =>
           x.gunlukDetaylar.map((d) => ({
             "Sicil No": x.sicil_no,
             "Ad Soyad": x.adSoyad,
@@ -1156,6 +1174,104 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       };
     }
     return { baslik: "", dosyaAdi: "", veriler: [] };
+  }
+
+  /** Tarih aralığının hareketleri, planı ve fazla mesaileri çekilip puantaj o aralık için hesaplanır */
+  async function aralikKaynagi(bas: string, bit: string): Promise<RaporKaynagi> {
+    const gun = 24 * 60 * 60 * 1000;
+    // Gece vardiyası eşleştirmesi için iki yanda birer gün pay
+    const basAn = new Date(new Date(`${bas}T00:00:00+03:00`).getTime() - gun).toISOString();
+    const sonAn = new Date(new Date(`${bit}T00:00:00+03:00`).getTime() + 2 * gun).toISOString();
+    const [har, plan, mesai] = await Promise.all([
+      tumunuGetir<Hareket>((a, b) =>
+        supabase
+          .from("hareketler")
+          .select(`*, personeller (ad, soyad, sicil_no, tc_kimlik), subeler (ad)`)
+          .gte("created_at", basAn)
+          .lt("created_at", sonAn)
+          .order("created_at", { ascending: true })
+          .order("id")
+          .range(a, b)
+      ),
+      tumunuGetir<PlanSatiri>((a, b) =>
+        supabase
+          .from("vardiya_plani")
+          .select("id, personel_id, tarih, tur, vardiya_id, sube_id")
+          .gte("tarih", gunEkle(bas, -1))
+          .lte("tarih", gunEkle(bit, 1))
+          .order("tarih")
+          .order("id")
+          .range(a, b)
+      ).catch(() => [] as PlanSatiri[]),
+      tumunuGetir<MesaiTalebi>((a, b) =>
+        supabase
+          .from("mesai_talepleri")
+          .select("*, personeller (ad, soyad, sicil_no, varsayilan_sube_id)")
+          .gte("tarih", bas)
+          .lte("tarih", bit)
+          .order("tarih", { ascending: false })
+          .order("id")
+          .range(a, b)
+      ).catch(() => [] as MesaiTalebi[]),
+    ]);
+    const subede = (id: string | null | undefined) => seciliSubeFiltre === "TUMU" || id === seciliSubeFiltre;
+    const puantaj = aralikPuantajHesapla({
+      bas,
+      bit,
+      personeller,
+      hareketler: har,
+      izinler,
+      resmiTatiller,
+      vardiyalar,
+      planlar: plan,
+      ayarlar,
+      bugun: bugunTarih,
+      simdi: new Date(),
+    }).filter((x) => subede(x.subeId));
+    const kisiSubesi = new Map(personeller.map((x) => [x.id, x.varsayilan_sube_id]));
+    return {
+      donem: `${bas}_${bit}`,
+      hareketler: har
+        .filter((h) => {
+          const t = yerelTarih(h.created_at);
+          return t >= bas && t <= bit && subede(h.sube_id);
+        })
+        .reverse(),
+      puantaj,
+      mesai,
+      izinler: izinler.filter((iz) => iz.baslangic_tarihi <= bit && iz.bitis_tarihi >= bas && subede(kisiSubesi.get(iz.personel_id))),
+    };
+  }
+
+  /** Raporu seçili ay için ya da verilen tarih aralığı için üretir */
+  async function raporUret(kod: string, aralik?: { bas: string; bit: string }) {
+    return cekirdekRapor(kod, aralik ? await aralikKaynagi(aralik.bas, aralik.bit) : undefined);
+  }
+
+  /** Tarih aralığıyla indirilebilen sekmeler ve rapor kodları */
+  const ARALIK_RAPORU: Partial<Record<Sekme, string>> = { genel: "hareketler", bakis: "puantaj", puantaj: "puantaj", mesai: "mesai", talepler: "talepler" };
+
+  async function aralikRaporIndir(bas: string, bit: string, format: Bicim) {
+    const kod = ARALIK_RAPORU[aktifSekme];
+    if (!kod) return;
+    const pencere = format === "pdf" ? window.open("", "_blank") : null;
+    try {
+      const { baslik, dosyaAdi, veriler, sureSutunlari } = await raporUret(kod, { bas, bit });
+      if (!veriler.length) {
+        pencere?.close();
+        bildir(`${bas} – ${bit} aralığında kayıt yok.`, "bilgi");
+        return;
+      }
+      const sorun = disariAktar(format, baslik, dosyaAdi, veriler, sureSutunlari, pencere);
+      if (sorun) bildir(sorun, "hata");
+      else {
+        bildir(`Rapor hazırlandı (${veriler.length} satır).`, "basari");
+        setAralikFormu(false);
+      }
+    } catch (err) {
+      pencere?.close();
+      bildir(hataYaz(err), "hata");
+    }
   }
 
   function raporIndir(format: Bicim) {
@@ -1520,6 +1636,20 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                       {ad}
                     </button>
                   ))}
+                  {ARALIK_RAPORU[aktifSekme] && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="menu-oge"
+                      onClick={() => {
+                        kapat();
+                        setAralikFormu(true);
+                      }}
+                    >
+                      <Ikon ad="takvim" boyut={16} />
+                      Tarih aralığıyla indir…
+                    </button>
+                  )}
                   {genel && (aktifSekme === "puantaj" || aktifSekme === "bakis") && (
                     <button
                       type="button"
@@ -1817,7 +1947,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             personeller={filtrelenmisPersoneller}
             seciliAy={seciliAy}
             onAyDegis={ayDegistir}
-            cekirdek={cekirdekRapor}
+            cekirdek={raporUret}
             onBordroAktarim={genel ? bordroIndir : undefined}
             onIzinKarti={(p) => {
               const sorun = izinKartiYazdir(yetki.firma?.ad ?? "", p, izinler, bakiyeler[p.id], isTakvimi);
@@ -1933,6 +2063,14 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           {digerSayac > 0 && <span className="alt-sayac">{digerSayac}</span>}
         </button>
       </nav>
+
+      {aralikFormu && (
+        <AralikRaporFormu
+          baslik={etkinOge?.etiket ?? "Rapor"}
+          onIndir={aralikRaporIndir}
+          onKapat={() => setAralikFormu(false)}
+        />
+      )}
 
       {/* Telefonda "Diğer": alt çubuğa sığmayan sekmeler ve yan menüdeki bağlantılar */}
       {digerAcik && (

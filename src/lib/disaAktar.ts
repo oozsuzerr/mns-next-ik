@@ -44,9 +44,14 @@ export function disariAktar(
   baslik: string,
   dosyaAdi: string,
   veriler: Satir[],
-  sureSutunlari: string[] = []
+  sureSutunlari: string[] = [],
+  /** PDF için tıklama anında açılmış pencere (veri beklenirken tarayıcı engellemesin) */
+  onceAcilan?: Window | null
 ): string | null {
-  if (veriler.length === 0) return "Bu sekmede dışa aktarılacak veri bulunamadı.";
+  if (veriler.length === 0) {
+    onceAcilan?.close();
+    return "Bu sekmede dışa aktarılacak veri bulunamadı.";
+  }
 
   const basliklar = Object.keys(veriler[0]);
 
@@ -93,7 +98,7 @@ export function disariAktar(
   }
 
   // pdf (yazdır)
-  const pencere = window.open("", "_blank");
+  const pencere = onceAcilan ?? window.open("", "_blank");
   if (!pencere) return "Açılır pencere engellendi. Tarayıcıdan bu site için izin verin.";
 
   const html = `<!DOCTYPE html>
