@@ -9,10 +9,12 @@ import KontrolListeleriSekmesi from "./KontrolListeleriSekmesi";
 import EgitimSekmesi from "./EgitimSekmesi";
 import PerformansSekmesi from "./PerformansSekmesi";
 import IseAlimSekmesi from "./IseAlimSekmesi";
+import GorevlerSekmesi from "./GorevlerSekmesi";
 import { modulAcik, type Modul } from "../../../lib/moduller";
 
 /** İK işlemleri: her modül kendi verisini kendisi yükler (ana sayfa büyümesin diye) */
 const BOLUMLER: readonly { id: string; ad: string; modul: Modul }[] = [
+  { id: "gorevler", ad: "Görevler", modul: "gorev" },
   { id: "duyurular", ad: "Duyurular", modul: "duyuru" },
   { id: "zimmet", ad: "Zimmet", modul: "zimmet" },
   { id: "odeme", ad: "Avans ve masraf", modul: "odeme" },
@@ -60,6 +62,7 @@ export default function IkSekmesi({
           </div>
         </div>
       )}
+      {bolum === "gorevler" && <GorevlerSekmesi personeller={personeller} yonetici={yonetici} />}
       {bolum === "duyurular" && <DuyurularSekmesi personeller={personeller} subeler={subeler} yonetici={yonetici} />}
       {bolum === "zimmet" && <ZimmetSekmesi personeller={personeller} yonetici={yonetici} />}
       {bolum === "odeme" && <OdemeSekmesi personeller={personeller} yonetici={yonetici} />}

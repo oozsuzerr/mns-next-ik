@@ -14,6 +14,7 @@ import MobilZimmetler from "../../components/mobil/MobilZimmetler";
 import MobilOdemeler from "../../components/mobil/MobilOdemeler";
 import MobilEgitimler from "../../components/mobil/MobilEgitimler";
 import MobilPerformans from "../../components/mobil/MobilPerformans";
+import MobilGorevler from "../../components/mobil/MobilGorevler";
 import { modulAcik } from "../../lib/moduller";
 import { olayBildir } from "../../lib/bildirim";
 import { anaEkrandaMi, cihazBilgisi, cihazKimligi, iosMu } from "../../lib/cihazKimligi";
@@ -902,6 +903,9 @@ function MobilGirisEkrani() {
 
       {/* Duyurular: okunmamışlar açık durur */}
       {token && modul("duyuru") && <MobilDuyurular token={token} />}
+
+      {/* Görevlerim */}
+      {token && modul("gorev") && <MobilGorevler token={token} />}
 
       {/* Vardiyam: bugün, yarın ve aylık takvim (plan verisi geldiyse) */}
       {plan && <VardiyamKarti gunPlaniBul={gunPlaniBul} />}

@@ -12,6 +12,8 @@
 //   { olay: "duyuru", duyuru_id }                     yönetici yeni duyuru yayınladı (Bearer)
 //   { olay: "odeme", token }                         personel mobilden avans/masraf talebi gönderdi
 //   { olay: "odeme_sonuc", odeme_id }                yönetici avans/masrafı onayladı/reddetti/ödedi (Bearer)
+//   { olay: "gorev", gorev_idler }                   yönetici personele görev verdi (Bearer)
+//   { olay: "gorev_sonuc", token, gorev_id }         personel görevine başladı ya da tamamladı
 import { bildirimGonder, kullaniciIstemcisi, servisIstemcisi, sorumlular } from "../../../lib/sunucuBildirim";
 import { GUN_ADLARI, haftaGunu, kisaTarih, sureYaz, yerelTarih } from "../../../lib/tarih";
 import { gunEkle } from "../../../lib/vardiyaPlani";
@@ -135,6 +137,35 @@ export async function POST(istek: Request) {
           metin: `${p?.ad ?? ""} ${p?.soyad ?? ""}: ${tlYaz(t.tutar)}${t.kategori ? ` (${t.kategori})` : ""}`,
           adres: "/",
           etiket: "odeme",
+        }
+      );
+      return yanit(200, { gonderilen });
+    }
+
+    // ------------------------------------------------------------ personel görevi güncelledi
+    if (govde.olay === "gorev_sonuc") {
+      const token = typeof govde.token === "string" ? govde.token : "";
+      const { data: pid, error } = await servis.rpc("oturum_personel", { p_token: token });
+      if (error || !pid) return yanit(401, { hata: "OTURUM_GECERSIZ" });
+      // Olay gerçekten oldu mu: bu personelin son 3 dakikada güncellenen görevi
+      const { data: g } = await servis
+        .from("gorevler")
+        .select("baslik, durum, personel_notu, atayan, personeller (ad, soyad)")
+        .eq("id", String(govde.gorev_id ?? ""))
+        .eq("personel_id", pid)
+        .gte("guncelleme", new Date(Date.now() - 3 * 60 * 1000).toISOString())
+        .maybeSingle();
+      if (!g?.atayan || (g.durum !== "Tamamlandı" && g.durum !== "Devam ediyor")) return yanit(200, { gonderilen: 0 });
+      const p = g.personeller as unknown as { ad: string; soyad: string } | null;
+      const not = g.personel_notu ? String(g.personel_notu).replace(/\s+/g, " ").trim() : "";
+      const gonderilen = await bildirimGonder(
+        servis,
+        { kullanicilar: [g.atayan as string] },
+        {
+          baslik: g.durum === "Tamamlandı" ? "Görev tamamlandı" : "Göreve başlandı",
+          metin: `${p?.ad ?? ""} ${p?.soyad ?? ""}: ${g.baslik}${not ? `. Not: ${not.length > 100 ? `${not.slice(0, 97)}...` : not}` : ""}`,
+          adres: "/",
+          etiket: "gorev-sonuc",
         }
       );
       return yanit(200, { gonderilen });
@@ -279,6 +310,32 @@ export async function POST(istek: Request) {
           etiket: "odeme-sonuc",
         }
       );
+      return yanit(200, { gonderilen });
+    }
+
+    // ------------------------------------------------------------ yeni görev
+    if (govde.olay === "gorev") {
+      const idler = Array.isArray(govde.gorev_idler) ? govde.gorev_idler.filter((x): x is string => typeof x === "string").slice(0, 200) : [];
+      if (!idler.length) return yanit(200, { gonderilen: 0 });
+      // Kullanıcının kendi yetkisiyle okunur: göremediği görev için bildirim gönderemez; yalnızca yeni görevler
+      const { data: liste } = await kullanici
+        .from("gorevler")
+        .select("personel_id, baslik, oncelik, son_tarih")
+        .in("id", idler)
+        .gte("created_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
+      let gonderilen = 0;
+      for (const g of liste ?? []) {
+        gonderilen += await bildirimGonder(
+          servis,
+          { personeller: [g.personel_id as string] },
+          {
+            baslik: `${g.oncelik === "Acil" || g.oncelik === "Yüksek" ? `${g.oncelik} görev: ` : "Yeni görev: "}${g.baslik}`,
+            metin: g.son_tarih ? `Son tarih ${kisaTarih(g.son_tarih as string)}. Ayrıntı için Görevlerim'e bakın.` : "Ayrıntı için Görevlerim'e bakın.",
+            adres: "/mobil",
+            etiket: "gorev",
+          }
+        );
+      }
       return yanit(200, { gonderilen });
     }
 
