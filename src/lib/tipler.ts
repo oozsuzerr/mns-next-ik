@@ -131,6 +131,10 @@ export interface YoneticiBilgisi {
   firma: { id: string; ad: string; kod: string } | null;
   /** Firmaları yöneten sistem yöneticisi mi (/sistem sayfası) */
   sistem: boolean;
+  /** Firmanın açık İK modülleri (null: paket bilgisi yok, hepsi açık sayılır) */
+  moduller: string[] | null;
+  /** Firmanın aktif personel sınırı (null: sınırsız) */
+  personelLimit: number | null;
 }
 
 /** Şube müdürüne tek tek verilebilen yetkiler (veritabanındaki anahtarlarla aynı) */
@@ -247,6 +251,8 @@ export function hataYaz(err: unknown): string {
   // Veritabanının yetki ve kilit hatalarını okunur hale getir
   const kilit = metin.match(/AY_KILITLI: (\d{4}-\d{2})/);
   if (kilit) return `${kilit[1]} ayı kapatılmış; bu aya ait kayıt değiştirilemez. Genel yönetici ayı açabilir.`;
+  const limit = metin.match(/PERSONEL_LIMITI: (\d+)/);
+  if (limit) return `Paketinizdeki personel sınırına (${limit[1]} aktif personel) ulaştınız. Daha fazla personel için paketinizi yükseltin.`;
   if (metin.includes("KORUNAN_ALAN")) return "PIN ve cihaz bilgisi yalnızca kendi düğmeleriyle değiştirilebilir.";
   if (metin.includes("CIHAZ_BASKASINDA")) return "Bu telefon başka bir personele kayıtlı; önce o personelin cihaz kilidini açın.";
   if (metin.includes("TALEP_SONUCLANMIS")) return "Bu talep zaten sonuçlanmış.";

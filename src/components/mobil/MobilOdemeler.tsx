@@ -22,6 +22,7 @@ const HATALAR: Record<string, string> = {
   TUR_GECERSIZ: "Fiş yalnızca fotoğraf ya da PDF olabilir.",
   BOYUT_GECERSIZ: "Fiş en fazla 5 MB olabilir.",
   COK_FAZLA_YUKLEME: "Çok sayıda fiş yüklendi. Bir saat sonra tekrar deneyin.",
+  MODUL_KAPALI: "Avans ve masraf bu firmada kullanılmıyor.",
 };
 
 /** Telefon fotoğrafını küçültür (en uzun kenar 1600 px, JPEG); küçültülemezse dosyayı olduğu gibi döner */

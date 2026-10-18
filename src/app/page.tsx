@@ -158,6 +158,9 @@ async function yetkiGetir(): Promise<YoneticiBilgisi | false> {
   if (!error) {
     if (!data) return false;
     const b = data as Partial<YoneticiBilgisi> & Pick<YoneticiBilgisi, "rol">;
+    // Paket (açık modüller, personel sınırı): fonksiyon yoksa hepsi açık, sınırsız
+    const paket = await supabase.rpc("firma_paketi");
+    const p = !paket.error && paket.data ? (paket.data as { moduller: string[] | null; personel_limit: number | null }) : null;
     return {
       rol: b.rol,
       ad: b.ad ?? null,
@@ -165,10 +168,12 @@ async function yetkiGetir(): Promise<YoneticiBilgisi | false> {
       yetkiler: b.yetkiler ?? (b.rol === "SUBE" ? ["plan", "izin", "manuel", "cihaz"] : []),
       firma: b.firma ?? null,
       sistem: b.sistem === true,
+      moduller: p?.moduller ?? null,
+      personelLimit: p?.personel_limit ?? null,
     };
   }
   const eski = await supabase.rpc("is_admin");
-  return !eski.error && eski.data === true ? { rol: "GENEL", ad: null, subeler: [], yetkiler: [], firma: null, sistem: false } : false;
+  return !eski.error && eski.data === true ? { rol: "GENEL", ad: null, subeler: [], yetkiler: [], firma: null, sistem: false, moduller: null, personelLimit: null } : false;
 }
 
 function YoneticiGiris() {
@@ -1196,7 +1201,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
     }
   }
 
-  const gorunenSekmeler = SEKMELER.filter((s) => s.id !== "subeler" || genel);
+  // Şubeler yalnızca genel yöneticide; İK işlemleri firmada en az bir modül açıksa
+  const gorunenSekmeler = SEKMELER.filter((s) => (s.id !== "subeler" || genel) && (s.id !== "ik" || yetki.moduller == null || yetki.moduller.length > 0));
   const altAna = gorunenSekmeler.filter((s) => ALT_CUBUK.includes(s.id));
   const altDiger = gorunenSekmeler.filter((s) => !ALT_CUBUK.includes(s.id));
   const digerSayac = altDiger.reduce((t, s) => t + (sekmeSayaci[s.id] ?? 0), 0);

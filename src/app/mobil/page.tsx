@@ -14,6 +14,7 @@ import MobilZimmetler from "../../components/mobil/MobilZimmetler";
 import MobilOdemeler from "../../components/mobil/MobilOdemeler";
 import MobilEgitimler from "../../components/mobil/MobilEgitimler";
 import MobilPerformans from "../../components/mobil/MobilPerformans";
+import { modulAcik } from "../../lib/moduller";
 import { olayBildir } from "../../lib/bildirim";
 import { anaEkrandaMi, cihazBilgisi, cihazKimligi, iosMu } from "../../lib/cihazKimligi";
 import { gunYaz, type IzinBakiyesi } from "../../lib/tipler";
@@ -275,6 +276,16 @@ function MobilGirisEkrani() {
   const [yillikIzin, setYillikIzin] = useState<IzinBakiyesi | null>(null);
   const [talepler, setTalepler] = useState<Talep[] | null>(null);
   const [mesaiTalepleri, setMesaiTalepleri] = useState<MesaiTalep[] | null>(null);
+  // Firmanın açık İK modülleri (oturumla birlikte; okunamazsa hepsi açık sayılır, her kart kendi verisini yine denetler)
+  const [moduller, setModuller] = useState<{ token: string; liste: string[] | null } | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    Promise.resolve(supabase.rpc("mobil_moduller", { p_token: token })).then(({ data, error }) =>
+      setModuller({ token, liste: error ? null : ((data as string[] | null) ?? []) })
+    );
+  }, [token]);
+  const modulHazir = !!token && moduller?.token === token;
+  const modul = (m: Parameters<typeof modulAcik>[1]) => modulHazir && modulAcik(moduller?.liste, m);
   const [mesaiAcik, setMesaiAcik] = useState(false);
   const [mesaiYukleniyor, setMesaiYukleniyor] = useState(false);
   const [mesai, setMesai] = useState({ tarih: "", baslangic_saat: "17:00", bitis_saat: "19:00", neden: "" });
@@ -890,7 +901,7 @@ function MobilGirisEkrani() {
       </section>
 
       {/* Duyurular: okunmamışlar açık durur */}
-      {token && <MobilDuyurular token={token} />}
+      {token && modul("duyuru") && <MobilDuyurular token={token} />}
 
       {/* Vardiyam: bugün, yarın ve aylık takvim (plan verisi geldiyse) */}
       {plan && <VardiyamKarti gunPlaniBul={gunPlaniBul} />}
@@ -1054,7 +1065,7 @@ function MobilGirisEkrani() {
       )}
 
       {/* Avans ve masraf */}
-      {token && <MobilOdemeler token={token} />}
+      {token && modul("odeme") && <MobilOdemeler token={token} />}
 
       {/* Mesai taleplerim */}
       {mesaiTalepleri && mesaiTalepleri.length > 0 && (
@@ -1125,13 +1136,13 @@ function MobilGirisEkrani() {
       )}
 
       {/* Zimmetimdeki eşyalar */}
-      {token && <MobilZimmetler token={token} />}
+      {token && modul("zimmet") && <MobilZimmetler token={token} />}
 
       {/* Eğitimlerim */}
-      {token && <MobilEgitimler token={token} />}
+      {token && modul("egitim") && <MobilEgitimler token={token} />}
 
       {/* Performans değerlendirmelerim */}
-      {token && <MobilPerformans token={token} />}
+      {token && modul("performans") && <MobilPerformans token={token} />}
 
       {/* Önceki işlemler */}
       {gecmis.length > 0 && (

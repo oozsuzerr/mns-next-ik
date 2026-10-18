@@ -9,19 +9,19 @@ import KontrolListeleriSekmesi from "./KontrolListeleriSekmesi";
 import EgitimSekmesi from "./EgitimSekmesi";
 import PerformansSekmesi from "./PerformansSekmesi";
 import IseAlimSekmesi from "./IseAlimSekmesi";
+import { modulAcik, type Modul } from "../../../lib/moduller";
 
 /** İK işlemleri: her modül kendi verisini kendisi yükler (ana sayfa büyümesin diye) */
-const BOLUMLER = [
-  { id: "duyurular", ad: "Duyurular" },
-  { id: "zimmet", ad: "Zimmet" },
-  { id: "odeme", ad: "Avans ve masraf" },
-  { id: "kontrol", ad: "Giriş / çıkış" },
-  { id: "egitim", ad: "Eğitim" },
-  { id: "performans", ad: "Performans" },
-  { id: "isealim", ad: "İşe alım" },
+const BOLUMLER: readonly { id: string; ad: string; modul: Modul }[] = [
+  { id: "duyurular", ad: "Duyurular", modul: "duyuru" },
+  { id: "zimmet", ad: "Zimmet", modul: "zimmet" },
+  { id: "odeme", ad: "Avans ve masraf", modul: "odeme" },
+  { id: "kontrol", ad: "Giriş / çıkış", modul: "kontrol" },
+  { id: "egitim", ad: "Eğitim", modul: "egitim" },
+  { id: "performans", ad: "Performans", modul: "performans" },
+  { id: "isealim", ad: "İşe alım", modul: "isealim" },
 ] as const;
 
-type Bolum = (typeof BOLUMLER)[number]["id"];
 
 export default function IkSekmesi({
   personeller,
@@ -32,24 +32,27 @@ export default function IkSekmesi({
   subeler: Sube[];
   yonetici: YoneticiBilgisi;
 }) {
-  const [bolum, setBolum] = useState<Bolum>("duyurular");
+  // Yalnızca firmanın paketinde açık modüller
+  const acik = BOLUMLER.filter((b) => modulAcik(yonetici.moduller, b.modul));
+  const [secilen, setBolum] = useState<string | null>(null);
+  const bolum = acik.find((b) => b.id === secilen)?.id ?? acik[0]?.id ?? null;
 
   return (
     <div className="space-y-4">
-      {BOLUMLER.length > 1 && (
+      {acik.length > 1 && (
         // Telefonda sığmazsa yana kayar
         <div className="-mx-1 overflow-x-auto px-1 pb-1">
           <div
             className="segment"
             style={{
-              gridTemplateColumns: `repeat(${BOLUMLER.length}, minmax(120px, 1fr))`,
-              maxWidth: 160 * BOLUMLER.length,
-              minWidth: 120 * BOLUMLER.length,
+              gridTemplateColumns: `repeat(${acik.length}, minmax(120px, 1fr))`,
+              maxWidth: 160 * acik.length,
+              minWidth: 120 * acik.length,
             }}
             role="tablist"
             aria-label="İK bölümü"
           >
-            {BOLUMLER.map((b) => (
+            {acik.map((b) => (
               <button key={b.id} type="button" role="tab" aria-selected={bolum === b.id} data-aktif={bolum === b.id} onClick={() => setBolum(b.id)}>
                 {b.ad}
               </button>

@@ -9,6 +9,7 @@ import { hataYaz } from "../../lib/tipler";
 import { kisaTarih, yerelTarih } from "../../lib/tarih";
 import { Bos, Iskelet, Ikon, Marka, Modal, Rozet, useBildirim } from "../../components/ui";
 import { SifreBelirleFormu } from "../../components/SifreFormlari";
+import { MODULLER, TUM_MODULLER } from "../../lib/moduller";
 
 interface FirmaSatiri {
   id: string;
@@ -16,6 +17,9 @@ interface FirmaSatiri {
   kod: string;
   aktif: boolean;
   created_at: string;
+  /** Paket kurulmadan önceki veritabanında gelmez */
+  moduller?: string[];
+  personel_limit?: number | null;
   personel: number;
   sube: number;
   yoneticiler: { eposta: string | null; rol: "GENEL" | "SUBE"; son_giris: string | null }[];
@@ -32,6 +36,8 @@ const SUNUCU_HATALARI: Record<string, string> = {
   SIFRE_GECERSIZ: "Şifre 8-72 karakter olmalı.",
   FIRMA_ADI_GECERSIZ: "Firma adı en az 2 karakter olmalı.",
   SUNUCU_ANAHTARI_YOK: "Sunucu ayarı eksik (SUPABASE_SERVICE_ROLE_KEY).",
+  LIMIT_GECERSIZ: "Personel sınırı 1 ile 100.000 arasında bir sayı olmalı (sınırsız için boş bırakın).",
+  PAKET_KAYDEDILEMEDI: "Firma açılamadı: paket kaydedilemedi. Veritabanı güncellemesi (firma_paketi) çalıştırılmamış olabilir.",
 };
 
 /** "Antik Kapı İnşaat" -> "antik-kapi-insaat" */
@@ -61,6 +67,7 @@ export default function SistemSayfasi() {
   const [yenileniyor, setYenileniyor] = useState(false);
   const [formAcik, setFormAcik] = useState(false);
   const [sifreEposta, setSifreEposta] = useState<string | null>(null);
+  const [paketFirma, setPaketFirma] = useState<FirmaSatiri | null>(null);
 
   const listeyiGetir = useCallback(async () => {
     setYenileniyor(true);
@@ -171,9 +178,22 @@ export default function SistemSayfasi() {
                         {f.aktif ? <Rozet ton="giris">Aktif</Rozet> : <Rozet ton="hata">Pasif</Rozet>}
                       </p>
                       <p className="m3 mt-0.5 text-xs">
-                        Kod <span className="sayi m2 font-semibold">{f.kod}</span> · {f.personel} personel · {f.sube} şube ·
+                        Kod <span className="sayi m2 font-semibold">{f.kod}</span> ·{" "}
+                        <span style={f.personel_limit != null && f.personel >= f.personel_limit ? { color: "var(--hata)", fontWeight: 600 } : undefined}>
+                          {f.personel}
+                          {f.personel_limit != null ? `/${f.personel_limit}` : ""} personel
+                        </span>{" "}
+                        · {f.sube} şube ·
                         açılış {kisaTarih(yerelTarih(f.created_at))}
                       </p>
+                      {f.moduller && (
+                        <p className="m3 mt-0.5 text-xs">
+                          Modüller:{" "}
+                          {f.moduller.length
+                            ? MODULLER.filter((m) => f.moduller!.includes(m.anahtar)).map((m) => m.ad).join(", ")
+                            : "yok (yalnızca temel PDKS)"}
+                        </p>
+                      )}
                       <p className="m3 mt-0.5 truncate text-xs">
                         Genel yönetici: {genel.length ? genel.map((y) => y.eposta).join(", ") : "yok"}
                         {f.yoneticiler.length > genel.length ? ` (+${f.yoneticiler.length - genel.length} şube müdürü)` : ""}
@@ -194,6 +214,12 @@ export default function SistemSayfasi() {
                               Şifre{genel.length > 1 ? `: ${y.eposta}` : ""}
                             </button>
                           )
+                      )}
+                      {f.moduller && (
+                        <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => setPaketFirma(f)}>
+                          <Ikon ad="kalem" boyut={14} />
+                          Paket
+                        </button>
                       )}
                       <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => baglantiKopyala(f.kod)}>
                         <Ikon ad="telefon" boyut={14} />
@@ -216,6 +242,16 @@ export default function SistemSayfasi() {
       </main>
 
       {sifreEposta && <SifreBelirleFormu eposta={sifreEposta} onKapat={() => setSifreEposta(null)} />}
+      {paketFirma && (
+        <PaketFormu
+          firma={paketFirma}
+          onKapat={() => setPaketFirma(null)}
+          onKayit={() => {
+            setPaketFirma(null);
+            listeyiGetir();
+          }}
+        />
+      )}
       {formAcik && (
         <YeniFirmaFormu
           onKapat={() => setFormAcik(false)}
@@ -233,6 +269,8 @@ export default function SistemSayfasi() {
 function YeniFirmaFormu({ onKapat, onKayit }: { onKapat: () => void; onKayit: (kod: string) => void }) {
   const { bildir } = useBildirim();
   const [f, setF] = useState({ firmaAd: "", kod: "", yoneticiAd: "", eposta: "", sifre: "" });
+  const [moduller, setModuller] = useState<string[]>([]);
+  const [limit, setLimit] = useState("");
   const [kodElle, setKodElle] = useState(false);
   const [yukleniyor, setYukleniyor] = useState(false);
 
@@ -245,7 +283,7 @@ function YeniFirmaFormu({ onKapat, onKayit }: { onKapat: () => void; onKayit: (k
       const cevap = await fetch("/api/sistem/firma", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
-        body: JSON.stringify(f),
+        body: JSON.stringify({ ...f, moduller, personelLimit: limit.trim() ? Number(limit) : null }),
       });
       const sonuc = (await cevap.json().catch(() => ({}))) as { hata?: string; detay?: string };
       if (!cevap.ok) throw new Error(SUNUCU_HATALARI[sonuc.hata ?? ""] ?? sonuc.detay ?? sonuc.hata ?? "Firma açılamadı.");
@@ -288,6 +326,9 @@ function YeniFirmaFormu({ onKapat, onKayit }: { onKapat: () => void; onKayit: (k
             }}
           />
           <p className="ipucu">Personelin giriş bağlantısında kullanılır: /mobil?f={f.kod || "kod"}. Sonradan değiştirilemez.</p>
+        </div>
+        <div className="kenar-ust pt-4">
+          <PaketAlanlari moduller={moduller} setModuller={setModuller} limit={limit} setLimit={setLimit} />
         </div>
         <div className="kenar-ust pt-4">
           <p className="m1 mb-3 text-sm font-semibold">İlk genel yönetici</p>
@@ -336,6 +377,117 @@ function YeniFirmaFormu({ onKapat, onKayit }: { onKapat: () => void; onKayit: (k
           </button>
           <button type="submit" className="btn btn-ana" disabled={yukleniyor}>
             {yukleniyor ? "Açılıyor..." : "Firmayı aç"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Firma paketi: açık İK modülleri ve aktif personel sınırı */
+function PaketAlanlari({
+  moduller,
+  setModuller,
+  limit,
+  setLimit,
+}: {
+  moduller: string[];
+  setModuller: (m: string[]) => void;
+  limit: string;
+  setLimit: (l: string) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <p className="m1 text-sm font-semibold">Modüller</p>
+          <button
+            type="button"
+            className="btn btn-hayalet btn-kucuk"
+            onClick={() => setModuller(moduller.length === TUM_MODULLER.length ? [] : [...TUM_MODULLER])}
+          >
+            {moduller.length === TUM_MODULLER.length ? "Hiçbiri" : "Tümü"}
+          </button>
+        </div>
+        <p className="ipucu mb-2">Puantaj, izin, fazla mesai, vardiya, şube ve personel her firmada açıktır.</p>
+        <ul className="space-y-1">
+          {MODULLER.map((m) => (
+            <li key={m.anahtar}>
+              <label className="m1 flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={moduller.includes(m.anahtar)}
+                  onChange={(e) => setModuller(e.target.checked ? [...moduller, m.anahtar] : moduller.filter((x) => x !== m.anahtar))}
+                />
+                <span>
+                  {m.ad}
+                  <span className="m3 block text-xs">{m.aciklama}</span>
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <label className="etiket" htmlFor="personelLimit">
+          Personel sınırı
+        </label>
+        <input
+          id="personelLimit"
+          className="girdi sayi"
+          type="number"
+          min={1}
+          max={100000}
+          placeholder="Sınırsız"
+          value={limit}
+          onChange={(e) => setLimit(e.target.value)}
+        />
+        <p className="ipucu">
+          Aktif personel sayısı. Sınır dolunca firma yeni personel ekleyemez, &quot;paketinizi yükseltin&quot; uyarısı görür. Boş bırakılırsa
+          sınırsız.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function PaketFormu({ firma, onKapat, onKayit }: { firma: FirmaSatiri; onKapat: () => void; onKayit: () => void }) {
+  const { bildir } = useBildirim();
+  const [moduller, setModuller] = useState<string[]>(firma.moduller ?? []);
+  const [limit, setLimit] = useState(firma.personel_limit != null ? String(firma.personel_limit) : "");
+  const [yukleniyor, setYukleniyor] = useState(false);
+  const sayi = limit.trim() ? Number(limit) : null;
+  const kapanan = (firma.moduller ?? []).filter((m) => !moduller.includes(m));
+
+  async function kaydet(e: FormEvent) {
+    e.preventDefault();
+    if (sayi !== null && (!Number.isInteger(sayi) || sayi < 1 || sayi > 100000)) return bildir(SUNUCU_HATALARI.LIMIT_GECERSIZ, "hata");
+    setYukleniyor(true);
+    const { error } = await supabase.rpc("sistem_firma_paket", { p_firma_id: firma.id, p_moduller: moduller, p_personel_limit: sayi });
+    setYukleniyor(false);
+    if (error) return bildir(hataYaz(error), "hata");
+    bildir(`${firma.ad} paketi güncellendi. Firmanın yöneticileri değişikliği sayfayı yenileyince görür.`, "basari");
+    onKayit();
+  }
+
+  return (
+    <Modal onKapat={onKapat} baslik={`${firma.ad} · paket`}>
+      <form onSubmit={kaydet} className="space-y-4">
+        <PaketAlanlari moduller={moduller} setModuller={setModuller} limit={limit} setLimit={setLimit} />
+        {sayi !== null && sayi < firma.personel && (
+          <p className="text-sm" style={{ color: "var(--hata)" }}>
+            Firmada şu an {firma.personel} aktif personel var. Mevcutlar etkilenmez, ama aktif personel {sayi} altına inene kadar yeni personel
+            eklenemez.
+          </p>
+        )}
+        {kapanan.length > 0 && <p className="m2 text-sm">Kapatılan modüllerin verisi silinmez, yalnızca gizlenir; modül yeniden açılınca geri gelir.</p>}
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" className="btn btn-ikincil" onClick={onKapat}>
+            Vazgeç
+          </button>
+          <button type="submit" className="btn btn-ana" disabled={yukleniyor}>
+            {yukleniyor ? "Kaydediliyor..." : "Kaydet"}
           </button>
         </div>
       </form>

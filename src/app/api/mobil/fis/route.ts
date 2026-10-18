@@ -42,8 +42,11 @@ export async function POST(istek: Request) {
 
   const { data: pid, error } = await servis.rpc("oturum_personel", { p_token: token });
   if (error || !pid) return yanit(401, { hata: "OTURUM_GECERSIZ" });
-  const { data: p } = await servis.from("personeller").select("firma_id").eq("id", pid).maybeSingle();
+  const { data: p } = await servis.from("personeller").select("firma_id, firmalar (moduller)").eq("id", pid).maybeSingle();
   if (!p?.firma_id) return yanit(401, { hata: "OTURUM_GECERSIZ" });
+  // Firmanın paketinde avans/masraf kapalıysa fiş alınmaz (paket kurulmadan önceki veritabanında sütun yoktur)
+  const moduller = (p.firmalar as unknown as { moduller?: string[] } | null)?.moduller;
+  if (moduller && !moduller.includes("odeme")) return yanit(403, { hata: "MODUL_KAPALI" });
 
   // Kötüye kullanıma karşı: bir personel saatte en çok 20 fiş yükleyebilir
   const { data: son } = await servis.storage.from(KOVA).list(`${p.firma_id}/${pid}`, { limit: 100, sortBy: { column: "created_at", order: "desc" } });
