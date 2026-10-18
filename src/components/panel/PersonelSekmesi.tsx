@@ -8,7 +8,7 @@ import { disariAktar } from "../../lib/disaAktar";
 import { AcilirMenu, Avatar, Bos, Ikon, Rozet, useBildirim, type RozetTon } from "../ui";
 
 type Liste = "aktif" | "izinli" | "devamsiz" | "tum" | "cikan";
-type Siralama = "ad" | "departman" | "sube" | "vardiya" | "giris" | "cikis";
+type Siralama = "ad" | "departman" | "unvan" | "sube" | "vardiya" | "giris" | "cikis";
 
 const LISTELER: { id: Liste; ad: string; ikon: "personel" | "takvim" | "uyari" | "bina" | "cikis" }[] = [
   { id: "aktif", ad: "Aktif personeller", ikon: "personel" },
@@ -33,6 +33,7 @@ export default function PersonelSekmesi({
   devamsizIdler,
   iceridekiIdler,
   onIzinBilgileri,
+  onGorevBilgisi,
   onOzluk,
   onYeni,
   onPin,
@@ -47,6 +48,8 @@ export default function PersonelSekmesi({
   devamsizIdler: Set<string>;
   iceridekiIdler: Set<string>;
   onIzinBilgileri: (p: Personel) => void;
+  /** Departman ve ünvan düzenleme ("personel" yetkisi) */
+  onGorevBilgisi?: (p: Personel) => void;
   /** Yalnızca genel yönetici: özlük bilgileri ve belgeler */
   onOzluk?: (p: Personel) => void;
   /** Verilmezse (şube müdürü) ilgili düğmeler gizlenir */
@@ -59,7 +62,7 @@ export default function PersonelSekmesi({
   const bugun = yerelTarih();
   const [liste, setListe] = useState<Liste>("aktif");
   const [ara, setAra] = useState("");
-  const [filtre, setFiltre] = useState({ ad: "", departman: "", sube: "", vardiya: "" });
+  const [filtre, setFiltre] = useState({ ad: "", departman: "", unvan: "", sube: "", vardiya: "" });
   const [sirala, setSirala] = useState<{ alan: Siralama; artan: boolean }>({ alan: "ad", artan: true });
   const [sayfaBoyu, setSayfaBoyu] = useState(25);
   const [sayfa, setSayfa] = useState(1);
@@ -89,6 +92,8 @@ export default function PersonelSekmesi({
         return `${p.ad} ${p.soyad}`;
       case "departman":
         return p.departman || "";
+      case "unvan":
+        return p.unvan || "";
       case "sube":
         return p.subeler?.ad || "";
       case "vardiya":
@@ -103,13 +108,14 @@ export default function PersonelSekmesi({
   const gorunen = useMemo(() => {
     const k = (s: string) => s.toLocaleLowerCase("tr-TR");
     const q = k(ara.trim());
-    const f = { ad: k(filtre.ad.trim()), departman: k(filtre.departman.trim()), sube: k(filtre.sube.trim()), vardiya: k(filtre.vardiya.trim()) };
+    const f = { ad: k(filtre.ad.trim()), departman: k(filtre.departman.trim()), unvan: k(filtre.unvan.trim()), sube: k(filtre.sube.trim()), vardiya: k(filtre.vardiya.trim()) };
     return listeler[liste]
       .filter(
         (p) =>
-          (!q || k(`${p.ad} ${p.soyad} ${p.sicil_no} ${p.departman ?? ""} ${p.subeler?.ad ?? ""}`).includes(q) || p.tc_kimlik.includes(ara.trim())) &&
+          (!q || k(`${p.ad} ${p.soyad} ${p.sicil_no} ${p.departman ?? ""} ${p.unvan ?? ""} ${p.subeler?.ad ?? ""}`).includes(q) || p.tc_kimlik.includes(ara.trim())) &&
           (!f.ad || k(`${p.ad} ${p.soyad} ${p.sicil_no}`).includes(f.ad)) &&
           (!f.departman || k(p.departman || "").includes(f.departman)) &&
+          (!f.unvan || k(p.unvan || "").includes(f.unvan)) &&
           (!f.sube || k(p.subeler?.ad || "").includes(f.sube)) &&
           (!f.vardiya || k(p.vardiyalar?.ad || "").includes(f.vardiya))
       )
@@ -131,6 +137,7 @@ export default function PersonelSekmesi({
         "Ad Soyad": `${p.ad} ${p.soyad}`,
         "T.C. Kimlik": p.tc_kimlik,
         Departman: p.departman || "",
+        Ünvan: p.unvan || "",
         Şube: p.subeler?.ad || "",
         Vardiya: p.vardiyalar?.ad || "",
         "İşe Giriş": p.ise_giris_tarihi || "",
@@ -177,12 +184,13 @@ export default function PersonelSekmesi({
         <>
           {[
             { ad: "İzin bilgileri", ikon: "takvim" as const, f: () => onIzinBilgileri(p) },
+            onGorevBilgisi && { ad: "Departman ve ünvan", ikon: "personel" as const, f: () => onGorevBilgisi(p) },
             onOzluk && { ad: "Özlük ve belgeler", ikon: "rapor" as const, f: () => onOzluk(p) },
             onPin && { ad: "PIN ver / sıfırla", ikon: "anahtar" as const, f: () => onPin(p) },
             p.cihaz_id && onCihaz && { ad: "Telefon kilidini aç", ikon: "kilitac" as const, f: () => onCihaz(p) },
             onAktif && { ad: p.aktif ? "Pasife al" : "Aktif et", ikon: "guc" as const, f: () => onAktif(p) },
           ]
-            .filter((x): x is { ad: string; ikon: "takvim" | "rapor" | "anahtar" | "kilitac" | "guc"; f: () => void } => !!x)
+            .filter((x): x is { ad: string; ikon: "takvim" | "personel" | "rapor" | "anahtar" | "kilitac" | "guc"; f: () => void } => !!x)
             .map((x) => (
               <button
                 key={x.ad}
@@ -310,6 +318,7 @@ export default function PersonelSekmesi({
                   <tr>
                     {baslik("Adı soyadı", "ad")}
                     {baslik("Departman", "departman")}
+                    {baslik("Ünvan", "unvan")}
                     {baslik("Şube", "sube")}
                     {baslik("Vardiya", "vardiya")}
                     {baslik("Giriş tar.", "giris")}
@@ -321,6 +330,7 @@ export default function PersonelSekmesi({
                   <tr>
                     {filtreKutusu("ad", "Adı soyadı")}
                     {filtreKutusu("departman", "Departman")}
+                    {filtreKutusu("unvan", "Ünvan")}
                     {filtreKutusu("sube", "Şube")}
                     {filtreKutusu("vardiya", "Vardiya")}
                     <th />
@@ -350,6 +360,7 @@ export default function PersonelSekmesi({
                           </div>
                         </td>
                         <td className="m2">{p.departman || "Genel"}</td>
+                        <td className="m2">{p.unvan || "-"}</td>
                         <td className="m2">{p.subeler?.ad || "Atanmamış"}</td>
                         <td className="m2">{p.vardiyalar?.ad || "-"}</td>
                         <td className="m2 sayi">{p.ise_giris_tarihi ? tamTarih(p.ise_giris_tarihi) : "-"}</td>
@@ -377,7 +388,7 @@ export default function PersonelSekmesi({
                   })}
                   {sayfadakiler.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="m3 py-6 text-center text-sm">
+                      <td colSpan={10} className="m3 py-6 text-center text-sm">
                         Filtreyle eşleşen personel yok.
                       </td>
                     </tr>
@@ -398,6 +409,7 @@ export default function PersonelSekmesi({
                         {p.ad} {p.soyad}
                       </p>
                       <p className="m3 truncate text-xs">
+                        {p.unvan ? `${p.unvan} · ` : ""}
                         {p.departman || "Genel"} · {p.subeler?.ad || "Şube yok"}
                         {p.cikis_tarihi ? ` · çıkış ${tamTarih(p.cikis_tarihi)}` : ""}
                       </p>

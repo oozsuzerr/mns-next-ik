@@ -44,7 +44,7 @@ function katilimFormuYazdir(firmaAd: string, o: Oturum, kisiler: Map<string, Per
     .sort((a, b) => `${a.ad} ${a.soyad}`.localeCompare(`${b.ad} ${b.soyad}`, "tr"))
     .map(
       (p, i) =>
-        `<tr><td class="sag">${i + 1}</td><td>${k(`${p.ad} ${p.soyad}`)}</td><td>${k(p.tc_kimlik)}</td><td>${k(p.departman ?? "")}</td><td style="width:30%"></td></tr>`
+        `<tr><td class="sag">${i + 1}</td><td>${k(`${p.ad} ${p.soyad}`)}</td><td>${k(p.tc_kimlik)}</td><td>${k([p.unvan, p.departman].filter(Boolean).join(" / "))}</td><td style="width:30%"></td></tr>`
     )
     .join("");
   const bitis = o.kayitlar[0]?.gecerlilik_bitis;

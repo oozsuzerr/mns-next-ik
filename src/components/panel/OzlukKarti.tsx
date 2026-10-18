@@ -129,7 +129,6 @@ function OzlukFormu({ hedef, onKapat }: { hedef: Personel; onKapat: () => void }
           telefon: bosaNull(f.telefon),
           eposta: bosaNull(f.eposta),
           adres: bosaNull(f.adres),
-          unvan: bosaNull(f.unvan),
           calisma_sekli: bosaNull(f.calisma_sekli),
           egitim: bosaNull(f.egitim),
           acil_kisi: bosaNull(f.acil_kisi),
@@ -168,7 +167,6 @@ function OzlukFormu({ hedef, onKapat }: { hedef: Personel; onKapat: () => void }
       </Bolum>
 
       <Bolum baslik="İş">
-        <Girdi etiket="Unvan / görev" {...alan("unvan")} />
         <Secim etiket="Çalışma şekli" secenekler={CALISMA_SEKILLERI} {...alan("calisma_sekli")} />
         <Secim etiket="Eğitim durumu" secenekler={EGITIM_DURUMLARI} {...alan("egitim")} />
       </Bolum>

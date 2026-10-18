@@ -238,6 +238,7 @@ export default function PerformansSekmesi({ personeller, yonetici }: { personell
                     <p className="m3 text-xs">
                       {p.subeler?.ad ?? ""}
                       {p.departman ? ` · ${p.departman}` : ""}
+                      {p.unvan ? ` · ${p.unvan}` : ""}
                       {d?.degerlendiren_ad ? ` · ${d.degerlendiren_ad}` : ""}
                     </p>
                   </div>

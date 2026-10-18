@@ -128,6 +128,7 @@ export function personelBilgisi(firmaAd: string, p: Personel): string {
     <tr><td>İşçinin adı soyadı</td><td>${k(`${p.ad} ${p.soyad}`)}</td></tr>
     <tr><td>T.C. kimlik no / sicil no</td><td>${k(p.tc_kimlik)} / ${k(p.sicil_no)}</td></tr>
     <tr><td>Şube / departman</td><td>${k(p.subeler?.ad ?? "-")} / ${k(p.departman ?? "-")}</td></tr>
+    <tr><td>Ünvan</td><td>${k(p.unvan || "-")}</td></tr>
     <tr><td>İşe giriş tarihi</td><td>${tr(p.ise_giris_tarihi)}</td></tr>
   </table>`;
 }

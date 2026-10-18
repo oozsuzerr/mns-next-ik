@@ -59,6 +59,7 @@ import {
   RedFormu,
   GelmeyenlerListesi,
   IzinBilgileriFormu,
+  GorevBilgisiFormu,
   IzinFormu,
   ManuelFormu,
   type CikisEksikSatiri,
@@ -319,6 +320,7 @@ type FormDurumu =
   | { tur: "gelmeyen" }
   | { tur: "cikisEksik" }
   | { tur: "izinBilgi"; hedef: Personel }
+  | { tur: "gorevBilgi"; hedef: Personel }
   | { tur: "cikis"; hedef: Personel }
   | { tur: "ozluk"; hedef: Personel }
   | { tur: "red"; talep: "izin" | "mesai"; id: string; ozet: string }
@@ -951,6 +953,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
           "Ad Soyad": `${p.ad} ${p.soyad}`.trim(),
           "T.C. Kimlik": p.tc_kimlik,
           Departman: p.departman || "Genel",
+          Ünvan: p.unvan || "",
           Şube: p.subeler?.ad || "Atanmamış",
           Durum: p.aktif ? "Aktif" : "Pasif",
           Cihaz: p.cihaz_id ? "Eşleşti" : "Boşta",
@@ -1034,7 +1037,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         Soyad: k?.soyad ?? "",
         Şube: p.subeAdi,
         Departman: p.departman,
-        Unvan: o?.unvan ?? "",
+        Unvan: k?.unvan || o?.unvan || "",
         "İşe Giriş": p.iseGiris ?? "",
         "İşten Çıkış": p.cikisTarihi ?? "",
         Ücret: o?.ucret ?? "",
@@ -1918,6 +1921,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 devamsizIdler={new Set(bugunOzet.gelmedi.map((p) => p.id))}
                 iceridekiIdler={new Set(bugunOzet.iceride.map((p) => p.id))}
                 onIzinBilgileri={(p) => setForm({ tur: "izinBilgi", hedef: p })}
+                onGorevBilgisi={yetkili("personel") ? (p) => setForm({ tur: "gorevBilgi", hedef: p }) : undefined}
                 onOzluk={genel ? (p) => setForm({ tur: "ozluk", hedef: p }) : undefined}
                 onYeni={yetkili("personel") ? () => setForm({ tur: "personel" }) : undefined}
                 onPin={yetkili("pin") ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
@@ -2146,6 +2150,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
         <VardiyaFormu duzenlenen={form.duzenlenen} onKapat={() => setForm(null)} onKayit={yenile} />
       )}
       {form?.tur === "izin" && <IzinFormu personeller={personeller} onKapat={() => setForm(null)} onKayit={yenile} />}
+      {form?.tur === "gorevBilgi" && <GorevBilgisiFormu hedef={form.hedef} onKapat={() => setForm(null)} onKayit={yenile} />}
       {form?.tur === "izinBilgi" && (
         <IzinBilgileriFormu
           hedef={form.hedef}

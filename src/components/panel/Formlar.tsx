@@ -51,6 +51,7 @@ export function PersonelFormu({
     ad: "",
     soyad: "",
     departman: "Genel",
+    unvan: "",
     varsayilan_sube_id: "",
     varsayilan_vardiya_id: "",
     pin: "",
@@ -88,6 +89,7 @@ export function PersonelFormu({
             ad: f.ad.trim(),
             soyad: f.soyad.trim(),
             departman: f.departman.trim() || "Genel",
+            unvan: f.unvan.trim() || null,
             varsayilan_sube_id: f.varsayilan_sube_id || null,
             varsayilan_vardiya_id: f.varsayilan_vardiya_id || null,
             rol: "PERSONEL",
@@ -150,6 +152,11 @@ export function PersonelFormu({
           <Alan etiket="Departman">
             <input className="girdi" value={f.departman} onChange={(e) => setF({ ...f, departman: e.target.value })} />
           </Alan>
+          <Alan etiket="Ünvan">
+            <input className="girdi" maxLength={100} placeholder="Ör. Satış temsilcisi" value={f.unvan} onChange={(e) => setF({ ...f, unvan: e.target.value })} />
+          </Alan>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <Alan etiket="Şube">
             <select
               className="girdi"
@@ -164,8 +171,6 @@ export function PersonelFormu({
               ))}
             </select>
           </Alan>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
           <Alan etiket="Vardiya">
             <select
               className="girdi"
@@ -180,6 +185,8 @@ export function PersonelFormu({
               ))}
             </select>
           </Alan>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
           <Alan etiket="Mobil PIN">
             <input
               className="girdi sayi"
@@ -208,6 +215,51 @@ export function PersonelFormu({
 // PIN belirle
 // ---------------------------------------------------------------------
 /** Personeli pasife alırken işten çıkış tarihi sorulur; puantajda sonrası "İşten Ayrıldı" görünür */
+// ---------------------------------------------------------------------
+// Departman ve ünvan düzenleme
+// ---------------------------------------------------------------------
+export function GorevBilgisiFormu({ hedef, onKapat, onKayit }: { hedef: Personel; onKapat: () => void; onKayit: () => void }) {
+  const { bildir } = useBildirim();
+  const [yukleniyor, setYukleniyor] = useState(false);
+  const [departman, setDepartman] = useState(hedef.departman ?? "");
+  const [unvan, setUnvan] = useState(hedef.unvan ?? "");
+
+  async function kaydet(e: FormEvent) {
+    e.preventDefault();
+    setYukleniyor(true);
+    try {
+      const { error } = await supabase
+        .from("personeller")
+        .update({ departman: departman.trim() || "Genel", unvan: unvan.trim() || null })
+        .eq("id", hedef.id);
+      if (error) throw error;
+      bildir("Departman ve ünvan kaydedildi.", "basari");
+      onKayit();
+      onKapat();
+    } catch (err) {
+      bildir(hataYaz(err), "hata");
+    } finally {
+      setYukleniyor(false);
+    }
+  }
+
+  return (
+    <Modal onKapat={onKapat} baslik={`${hedef.ad} ${hedef.soyad}: departman ve ünvan`}>
+      <form onSubmit={kaydet} className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <Alan etiket="Departman">
+            <input className="girdi" maxLength={100} value={departman} onChange={(e) => setDepartman(e.target.value)} />
+          </Alan>
+          <Alan etiket="Ünvan">
+            <input className="girdi" maxLength={100} placeholder="Ör. Satış temsilcisi" value={unvan} onChange={(e) => setUnvan(e.target.value)} />
+          </Alan>
+        </div>
+        <Altlik onKapat={onKapat} yukleniyor={yukleniyor} kaydetEtiket="Kaydet" />
+      </form>
+    </Modal>
+  );
+}
+
 export function IstenCikisFormu({ hedef, onKapat, onKayit }: { hedef: Personel; onKapat: () => void; onKayit: () => void }) {
   const { bildir } = useBildirim();
   const [tarih, setTarih] = useState(yerelTarih());

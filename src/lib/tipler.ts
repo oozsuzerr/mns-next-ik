@@ -23,6 +23,8 @@ export interface Personel {
   ad: string;
   soyad: string;
   departman: string | null;
+  /** Ünvan / görev (ör. Muhasebe uzmanı) */
+  unvan?: string | null;
   varsayilan_sube_id: string | null;
   varsayilan_vardiya_id: string | null;
   rol: string;
@@ -155,7 +157,7 @@ export type Yetki = (typeof YETKILER)[number]["anahtar"];
 export type Sekme = "bakis" | "puantaj" | "talepler" | "mesai" | "genel" | "personel" | "vardiya" | "ik" | "subeler" | "raporlar";
 
 export const PERSONEL_KOLONLARI =
-  "id, sicil_no, tc_kimlik, ad, soyad, departman, varsayilan_sube_id, varsayilan_vardiya_id, rol, cihaz_id, aktif, created_at, pin_tanimli, ise_giris_tarihi, dogum_tarihi, devreden_izin_gun, devir_tarihi, cikis_tarihi, firma_id, subeler:varsayilan_sube_id (ad), vardiyalar:varsayilan_vardiya_id (*)";
+  "id, sicil_no, tc_kimlik, ad, soyad, departman, unvan, varsayilan_sube_id, varsayilan_vardiya_id, rol, cihaz_id, aktif, created_at, pin_tanimli, ise_giris_tarihi, dogum_tarihi, devreden_izin_gun, devir_tarihi, cikis_tarihi, firma_id, subeler:varsayilan_sube_id (ad), vardiyalar:varsayilan_vardiya_id (*)";
 
 /** Yıllık izin hesabı (veritabanındaki _yillik_izin_hesapla ile aynı alanlar) */
 export interface IzinBakiyesi {
