@@ -24,7 +24,7 @@ export interface YasalParametreler {
   saatBoleni: number;
 }
 
-export type MesaiKaynagi = "fazla_mesai" | "hafta_tatili" | "resmi_tatil" | "plan_disi";
+export type MesaiKaynagi = "fazla_mesai" | "fazla_calisma" | "hafta_tatili" | "resmi_tatil" | "plan_disi";
 
 export interface MesaiKalemi {
   id: string;
@@ -36,13 +36,25 @@ export interface MesaiKalemi {
   aktif: boolean;
 }
 
+/** Firmanın hesap kuralları (bordro_ayarlari.yasal.kurallar içinde saklanır) */
+export interface HesapKurallari {
+  /** İş günlerinde plandan eksik çalışılan saat, saat ücretiyle ücretten düşülsün (geç gelme, erken çıkma) */
+  eksikSaatKesintisi: boolean;
+  /** Günde bu kadar dakikaya kadar eksik çalışma kesintiye girmez (tolerans) */
+  eksikToleransDk: number;
+  /** Saatlik ücretlilere hafta tatili ve resmî tatil günleri için günlük ücret (7,5 saat) ödensin */
+  saatliktenTatilUcreti: boolean;
+}
+
 export interface BordroAyarlari {
   yasal: YasalParametreler;
   mesaiKalemleri: MesaiKalemi[];
+  kurallar: HesapKurallari;
 }
 
 export const MESAI_KAYNAKLARI: Record<MesaiKaynagi, { ad: string; aciklama: string }> = {
   fazla_mesai: { ad: "Onaylı fazla mesai", aciklama: "Personelin bildirip yöneticinin onayladığı fazla mesai saatleri" },
+  fazla_calisma: { ad: "Puantajdaki fazla çalışma", aciklama: "İş günlerinde plandan fazla çalışılan saatler (talep gerekmez; onaylı mesaiyle birlikte açılırsa çift sayılabilir)" },
   hafta_tatili: { ad: "Hafta tatili çalışması", aciklama: "Puantajda hafta tatili gününe düşen çalışma saatleri" },
   resmi_tatil: { ad: "Resmî tatil çalışması", aciklama: "Puantajda resmî/bayram tatiline düşen çalışma saatleri" },
   plan_disi: { ad: "Plan dışı çalışma", aciklama: "Puantajda vardiya dışında kalan çalışma (onaylı mesaiyle çakışabilir)" },
@@ -78,11 +90,16 @@ export const VARSAYILAN_MESAI_KALEMLERI: MesaiKalemi[] = [
   { id: "hafta", ad: "Hafta tatili çalışması (%50 zamlı)", kaynak: "hafta_tatili", carpan: 1.5, aktif: true },
   { id: "resmi", ad: "Resmî tatil çalışması (ek 1 günlük ücret)", kaynak: "resmi_tatil", carpan: 1, aktif: true },
   { id: "plandisi", ad: "Plan dışı çalışma", kaynak: "plan_disi", carpan: 1.5, aktif: false },
+  { id: "fazlacalisma", ad: "Puantajdaki fazla çalışma (%50 zamlı)", kaynak: "fazla_calisma", carpan: 1.5, aktif: false },
 ];
 
-export const VARSAYILAN_BORDRO_AYARLARI: BordroAyarlari = { yasal: VARSAYILAN_YASAL, mesaiKalemleri: VARSAYILAN_MESAI_KALEMLERI };
+export const VARSAYILAN_KURALLAR: HesapKurallari = { eksikSaatKesintisi: false, eksikToleransDk: 0, saatliktenTatilUcreti: true };
 
-export type UcretTuru = "Aylık brüt" | "Aylık net" | "Günlük brüt" | "Saatlik brüt";
+export const VARSAYILAN_BORDRO_AYARLARI: BordroAyarlari = { yasal: VARSAYILAN_YASAL, mesaiKalemleri: VARSAYILAN_MESAI_KALEMLERI, kurallar: VARSAYILAN_KURALLAR };
+
+export type UcretTuru = "Aylık brüt" | "Aylık net" | "Haftalık brüt" | "Günlük brüt" | "Saatlik brüt";
+
+export const UCRET_TURLERI: UcretTuru[] = ["Aylık brüt", "Aylık net", "Haftalık brüt", "Günlük brüt", "Saatlik brüt"];
 
 const yuvarla = (n: number) => Math.round(n * 100) / 100;
 
@@ -175,6 +192,10 @@ export function temelUcret(ucret: number, tur: UcretTuru, ay: number, y: YasalPa
       const aylikBrut = nettenBrute(ucret, ay, y);
       return { aylikBrut, saatlik: aylikBrut / y.saatBoleni };
     }
+    case "Haftalık brüt": {
+      const aylikBrut = (ucret / 7) * 30;
+      return { aylikBrut, saatlik: aylikBrut / y.saatBoleni };
+    }
     case "Günlük brüt":
       return { aylikBrut: ucret * 30, saatlik: ucret / 7.5 };
     case "Saatlik brüt":
@@ -186,6 +207,7 @@ export function temelUcret(ucret: number, tur: UcretTuru, ay: number, y: YasalPa
 
 export interface MesaiSaatleri {
   fazla_mesai: number;
+  fazla_calisma: number;
   hafta_tatili: number;
   resmi_tatil: number;
   plan_disi: number;
@@ -206,6 +228,13 @@ export interface BordroGirdisi {
   primGun: number;
   /** Saatlik ücretlide çalışılan saat */
   calismaSaati: number;
+  /** İş günlerinde plandan eksik çalışılan saat (tolerans uygulanmış) */
+  eksikSaat: number;
+  /** Kadrodaki hafta tatili ve resmî tatil günü sayısı (saatlik ücretlinin tatil ücreti için) */
+  tatilGun: number;
+  /** Ek kazançlar: vergili olanlar brüte, vergisizler netten sonra eklenir */
+  ekVergili: number;
+  ekVergisiz: number;
   mesaiSaatleri: MesaiSaatleri;
   avans: number;
   masraf: number;
@@ -217,6 +246,12 @@ export interface TahminiBordro extends BrutNetSonuc {
   ucretBrut: number;
   saatlik: number;
   mesai: ReturnType<typeof mesaiUcretleri>;
+  /** Saatlik ücretlinin tatil günleri ücreti */
+  tatilUcreti: number;
+  /** Eksik çalışma kesintisi (pozitif tutar) */
+  eksikKesinti: number;
+  ekVergili: number;
+  ekVergisiz: number;
   avans: number;
   masraf: number;
   odenecek: number;
@@ -226,26 +261,37 @@ export function tahminiBordro(g: BordroGirdisi, ayar: BordroAyarlari): TahminiBo
   const y = ayar.yasal;
   const { aylikBrut, saatlik } = temelUcret(g.ucret, g.ucretTuru, g.ay, y);
   const gun = Math.max(0, Math.min(30, g.primGun));
-  const ucretBrut = g.ucretTuru === "Saatlik brüt" ? g.ucret * g.calismaSaati : (aylikBrut * gun) / 30;
+  const saatlikUcretli = g.ucretTuru === "Saatlik brüt";
+  const ucretBrut = saatlikUcretli ? g.ucret * g.calismaSaati : (aylikBrut * gun) / 30;
+  const tatilUcreti = saatlikUcretli && ayar.kurallar.saatliktenTatilUcreti ? g.tatilGun * 7.5 * g.ucret : 0;
+  // Saatlik ücretli zaten çalıştığı saat kadar alır; eksik kesintisi aylık/haftalık/günlük ücretliye uygulanır
+  const eksikKesinti = !saatlikUcretli && ayar.kurallar.eksikSaatKesintisi ? Math.min(ucretBrut, g.eksikSaat * saatlik) : 0;
   const mesai = mesaiUcretleri(saatlik, g.mesaiSaatleri, ayar.mesaiKalemleri);
-  const sonuc = brutten(ucretBrut + mesai.toplam, gun, g.ay, y);
+  const sonuc = brutten(ucretBrut + tatilUcreti - eksikKesinti + mesai.toplam + g.ekVergili, gun, g.ay, y);
   return {
     ...sonuc,
     ucretBrut: yuvarla(ucretBrut),
     saatlik: yuvarla(saatlik),
     mesai,
+    tatilUcreti: yuvarla(tatilUcreti),
+    eksikKesinti: yuvarla(eksikKesinti),
+    ekVergili: yuvarla(g.ekVergili),
+    ekVergisiz: yuvarla(g.ekVergisiz),
     avans: yuvarla(g.avans),
     masraf: yuvarla(g.masraf),
-    odenecek: yuvarla(sonuc.net - g.avans + g.masraf),
+    odenecek: yuvarla(sonuc.net - g.avans + g.masraf + g.ekVergisiz),
   };
 }
 
 /** Kayıtlı ayarları varsayılanlarla tamamlar (eksik alan, bozuk değer) */
-export function bordroAyarlariniTamamla(kayit: { yasal?: Partial<YasalParametreler> | null; mesai_kalemleri?: MesaiKalemi[] | null } | null): BordroAyarlari {
-  const yasal = { ...VARSAYILAN_YASAL, ...(kayit?.yasal ?? {}) };
+export function bordroAyarlariniTamamla(
+  kayit: { yasal?: (Partial<YasalParametreler> & { kurallar?: Partial<HesapKurallari> }) | null; mesai_kalemleri?: MesaiKalemi[] | null } | null
+): BordroAyarlari {
+  const { kurallar, ...kayitliYasal } = kayit?.yasal ?? {};
+  const yasal: YasalParametreler = { ...VARSAYILAN_YASAL, ...kayitliYasal };
   if (!Array.isArray(yasal.vergiDilimleri) || !yasal.vergiDilimleri.length) yasal.vergiDilimleri = VARSAYILAN_YASAL.vergiDilimleri;
   const mesaiKalemleri = Array.isArray(kayit?.mesai_kalemleri) ? kayit!.mesai_kalemleri! : VARSAYILAN_MESAI_KALEMLERI;
-  return { yasal, mesaiKalemleri };
+  return { yasal, mesaiKalemleri, kurallar: { ...VARSAYILAN_KURALLAR, ...(kurallar ?? {}) } };
 }
 
 export const tlYaz = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });

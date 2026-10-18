@@ -1949,6 +1949,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             mesaiTalepleri={mesaiTalepleri}
             seciliAy={seciliAy}
             onAyDegis={ayDegistir}
+            onHareketDuzelt={yetkili("manuel") ? (baslangic) => setForm({ tur: "manuel", baslangic }) : undefined}
             bolum={etkinIk}
           />
         )}

@@ -12,6 +12,7 @@ import IseAlimSekmesi from "./IseAlimSekmesi";
 import GorevlerSekmesi from "./GorevlerSekmesi";
 import BordroSekmesi from "./BordroSekmesi";
 import type { PuantajSatiri } from "../../../lib/puantaj";
+import type { ManuelBaslangic } from "../Formlar";
 import { modulAcik, type Modul } from "../../../lib/moduller";
 
 /** İK işlemleri: her modül kendi verisini kendisi yükler (ana sayfa büyümesin diye) */
@@ -42,6 +43,7 @@ export default function IkSekmesi({
   mesaiTalepleri,
   seciliAy,
   onAyDegis,
+  onHareketDuzelt,
   bolum: disBolum,
 }: {
   personeller: Personel[];
@@ -52,6 +54,8 @@ export default function IkSekmesi({
   mesaiTalepleri: MesaiTalebi[];
   seciliAy: string;
   onAyDegis: (ay: string) => void;
+  /** Bordro detayından manuel giriş/çıkış düzeltme */
+  onHareketDuzelt?: (b: ManuelBaslangic) => void;
   /** Verilirse bölüm yan menüden seçilir ve üstteki bölüm çubuğu gizlenir */
   bolum?: string | null;
 }) {
@@ -91,7 +95,7 @@ export default function IkSekmesi({
       {bolum === "egitim" && <EgitimSekmesi personeller={personeller} yonetici={yonetici} />}
       {bolum === "performans" && <PerformansSekmesi personeller={personeller} yonetici={yonetici} />}
       {bolum === "bordro" && (
-        <BordroSekmesi puantaj={puantaj} mesaiTalepleri={mesaiTalepleri} seciliAy={seciliAy} onAyDegis={onAyDegis} yonetici={yonetici} />
+        <BordroSekmesi puantaj={puantaj} mesaiTalepleri={mesaiTalepleri} seciliAy={seciliAy} onAyDegis={onAyDegis} yonetici={yonetici} onHareketDuzelt={onHareketDuzelt} />
       )}
       {bolum === "isealim" && <IseAlimSekmesi personeller={personeller} subeler={subeler} yonetici={yonetici} />}
     </div>

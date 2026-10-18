@@ -22,7 +22,7 @@ export interface BordroVerisi {
   yenile: () => Promise<void>;
 }
 
-const UCRET_TURLERI: UcretTuru[] = ["Aylık brüt", "Aylık net", "Günlük brüt", "Saatlik brüt"];
+const UCRET_TURLERI: UcretTuru[] = ["Aylık brüt", "Aylık net", "Haftalık brüt", "Günlük brüt", "Saatlik brüt"];
 
 export function useBordroVerisi(etkin: boolean): BordroVerisi {
   const [durum, setDurum] = useState<Omit<BordroVerisi, "yenile">>({

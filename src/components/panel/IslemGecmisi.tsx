@@ -37,6 +37,8 @@ const TABLOLAR: Record<string, string> = {
   cihaz_talepleri: "Telefon talebi",
   personel_ozluk: "Özlük bilgisi",
   personel_belgeleri: "Personel belgesi",
+  bordro_ayarlari: "Bordro ayarı",
+  ek_kazanclar: "Ek kazanç",
 };
 
 const ALANLAR: Record<string, string> = {

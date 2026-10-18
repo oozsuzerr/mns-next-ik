@@ -160,3 +160,72 @@ export function cetvelAktarimi(liste: PuantajSatiri[]): Satir[] {
   }
   return satirlar;
 }
+
+export interface GunOzeti {
+  /** Ayın takvim günü (aralıkta gösterilen gün sayısı) */
+  ayGun: number;
+  sgkGun: number;
+  /** Ücretlendirilen gün (SGK prim günü) */
+  primGun: number;
+  /** İş günlerinde çalışılan gün */
+  normalGun: number;
+  /** Kadrodaki resmî tatil ve hafta tatili (çalışılmayan gün dahil) günleri */
+  rtGun: number;
+  htGun: number;
+  devamsiz: number;
+  ucretliIzin: number;
+  ucretsizIzin: number;
+  rapor: number;
+  /** Dakika: iş günlerinde plan kadar, fazla, eksik (pozitif); tatil çalışmaları */
+  normalDk: number;
+  fazlaDk: number;
+  eksikDk: number;
+  /** Günlük toleransı aşan eksik (kesinti için) */
+  kesintiliEksikDk: number;
+  htDk: number;
+  rtDk: number;
+}
+
+/** Bordro için kişi başı gün ve süre özeti (eksikToleransDk: günde bu kadarlık eksik kesintiye girmez) */
+export function gunOzeti(p: PuantajSatiri, eksikToleransDk = 0): GunOzeti {
+  const o: GunOzeti = {
+    ayGun: p.gunlukDetaylar.length,
+    sgkGun: p.sgkTabanGun,
+    primGun: p.sgkPrimGun,
+    normalGun: 0,
+    rtGun: 0,
+    htGun: 0,
+    devamsiz: p.devamsizGunler,
+    ucretliIzin: p.yillikIzinGunler + p.ucretliIzinGunler,
+    ucretsizIzin: p.ucretsizIzinGunler,
+    rapor: p.raporluGunler,
+    normalDk: 0,
+    fazlaDk: 0,
+    eksikDk: 0,
+    kesintiliEksikDk: 0,
+    htDk: 0,
+    rtDk: 0,
+  };
+  const bas = p.iseGiris ?? "";
+  for (const g of p.gunlukDetaylar) {
+    const kadroda = g.tarih >= bas && (!p.cikisTarihi || g.tarih <= p.cikisTarihi);
+    if (kadroda && g.gunTuru === "resmiTatil") o.rtGun++;
+    else if (kadroda && g.gunTuru !== "is") o.htGun++;
+    if (g.calismaDk <= 0) continue;
+    if (g.gunTuru === "resmiTatil") o.rtDk += g.calismaDk;
+    else if (g.gunTuru !== "is") o.htDk += g.calismaDk;
+    else {
+      o.normalGun++;
+      if (g.planDk > 0) {
+        const fark = g.calismaDk - g.planDk;
+        o.normalDk += Math.min(g.calismaDk, g.planDk);
+        if (fark > 0) o.fazlaDk += fark;
+        else {
+          o.eksikDk += -fark;
+          if (-fark > eksikToleransDk) o.kesintiliEksikDk += -fark;
+        }
+      } else o.normalDk += g.calismaDk;
+    }
+  }
+  return o;
+}

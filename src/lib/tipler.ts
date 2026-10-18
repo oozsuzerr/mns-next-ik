@@ -222,7 +222,7 @@ export interface PersonelOzluk {
 
 export const CALISMA_SEKILLERI = ["Tam zamanlı", "Yarı zamanlı", "Kısmi süreli", "Belirli süreli", "Stajyer", "Diğer"] as const;
 export const EGITIM_DURUMLARI = ["İlkokul", "Ortaokul", "Lise", "Ön lisans", "Lisans", "Yüksek lisans", "Doktora"] as const;
-export const UCRET_TURLERI = ["Aylık brüt", "Aylık net", "Günlük brüt", "Saatlik brüt"] as const;
+export const UCRET_TURLERI = ["Aylık brüt", "Aylık net", "Haftalık brüt", "Günlük brüt", "Saatlik brüt"] as const;
 
 /** Personel belgesi (dosyası Storage'da "personel-belgeleri" kovasında) */
 export interface PersonelBelge {
