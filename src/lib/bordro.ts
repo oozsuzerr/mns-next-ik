@@ -49,23 +49,24 @@ export const MESAI_KAYNAKLARI: Record<MesaiKaynagi, { ad: string; aciklama: stri
 };
 
 /**
- * Varsayılanlar 2025 yılının resmî değerleridir. Yeni yılda (asgari ücret, vergi dilimleri, SGK oranları)
- * Bordro ayarlarından güncellenmelidir.
+ * Varsayılanlar 2026 yılının resmî değerleridir: brüt asgari ücret 33.030 TL (net 28.075,50), SGK tavanı asgari
+ * ücretin 9 katı, ücret gelir vergisi tarifesi 190 bin / 400 bin / 1,5 milyon / 5,3 milyon. İşveren SGK payı
+ * teşviksiz %21,75; 2 puan teşvikte 19,75, imalatta 5 puan teşvikte 16,75 girilir. Yeni yılda Bordro ayarlarından güncellenmelidir.
  */
 export const VARSAYILAN_YASAL: YasalParametreler = {
-  yil: 2025,
-  asgariBrut: 26005.5,
-  sgkTavanKatsayi: 7.5,
+  yil: 2026,
+  asgariBrut: 33030,
+  sgkTavanKatsayi: 9,
   sgkIsci: 14,
   issizlikIsci: 1,
-  sgkIsveren: 20.75,
+  sgkIsveren: 21.75,
   issizlikIsveren: 2,
   damgaBinde: 7.59,
   vergiDilimleri: [
-    { ust: 158000, oran: 15 },
-    { ust: 330000, oran: 20 },
-    { ust: 1200000, oran: 27 },
-    { ust: 4300000, oran: 35 },
+    { ust: 190000, oran: 15 },
+    { ust: 400000, oran: 20 },
+    { ust: 1500000, oran: 27 },
+    { ust: 5300000, oran: 35 },
     { ust: null, oran: 40 },
   ],
   saatBoleni: 225,

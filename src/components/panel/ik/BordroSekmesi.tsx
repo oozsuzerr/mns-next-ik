@@ -28,6 +28,8 @@ interface Satir {
   sicil: string;
   sube: string;
   primGun: number;
+  /** Prim günü 30'dan azsa nedeni (devamsız, rapor, işe giriş...) */
+  eksikNedeni: string;
   ucretVar: boolean;
   b: TahminiBordro | null;
 }
@@ -52,6 +54,8 @@ export default function BordroSekmesi({
   const [gorunum, setGorunum] = useState<"bordro" | "ayarlar">("bordro");
   const [odemeler, setOdemeler] = useState<{ ay: string; avans: Map<string, number>; masraf: Map<string, number> } | null>(null);
   const [detay, setDetay] = useState<Satir | null>(null);
+  // Puantaja göre: SGK prim günü kadar (devamsızlık, rapor, ücretsiz izin düşülür). Tam ay: herkes 30 gün.
+  const [gunModu, setGunModu] = useState<"puantaj" | "tam">("puantaj");
   const ayNo = Number(seciliAy.slice(5, 7));
 
   // Seçili ayın onaylı/ödenmiş avans ve masrafları (modül kapalıysa ya da okunamazsa sıfır)
@@ -82,12 +86,19 @@ export default function BordroSekmesi({
       .filter((p) => p.sgkPrimGun > 0 || p.toplamCalismaDk > 0)
       .map((p) => {
         const u = veri.ucretler.get(p.id);
+        const primGun = gunModu === "tam" ? 30 : p.sgkPrimGun;
+        const nedenler = [
+          p.sgkTabanGun < 30 ? `${30 - p.sgkTabanGun} gün kadro dışı` : "",
+          p.devamsizGunler ? `${p.devamsizGunler} devamsız` : "",
+          p.raporluGunler ? `${p.raporluGunler} raporlu` : "",
+          p.ucretsizIzinGunler ? `${p.ucretsizIzinGunler} ücretsiz izin` : "",
+        ].filter(Boolean);
         const b = u
           ? tahminiBordro(
               {
                 ucret: u.ucret,
                 ucretTuru: u.tur,
-                primGun: p.sgkPrimGun,
+                primGun,
                 calismaSaati: saat(p.toplamCalismaDk),
                 mesaiSaatleri: {
                   fazla_mesai: saat(mesaiDk.get(p.id) ?? 0),
@@ -102,9 +113,9 @@ export default function BordroSekmesi({
               veri.ayarlar
             )
           : null;
-        return { id: p.id, ad: p.adSoyad, sicil: p.sicil_no, sube: p.subeAdi, primGun: p.sgkPrimGun, ucretVar: !!u, b };
+        return { id: p.id, ad: p.adSoyad, sicil: p.sicil_no, sube: p.subeAdi, primGun, eksikNedeni: gunModu === "tam" ? "" : nedenler.join(", "), ucretVar: !!u, b };
       });
-  }, [puantaj, mesaiTalepleri, seciliAy, odemeler, veri.ucretler, veri.ayarlar, ayNo]);
+  }, [puantaj, mesaiTalepleri, seciliAy, odemeler, veri.ucretler, veri.ayarlar, ayNo, gunModu]);
 
   if (veri.kurulmamis) return <KurulumUyarisi dosya="supabase/2026-10-18_bordro.sql" />;
 
@@ -161,6 +172,14 @@ export default function BordroSekmesi({
               onChange={(e) => e.target.value && onAyDegis(e.target.value)}
               aria-label="Dönem"
             />
+            <div className="segment" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", width: 280, maxWidth: "100%" }} role="tablist" aria-label="Gün hesabı">
+              <button type="button" role="tab" aria-selected={gunModu === "puantaj"} data-aktif={gunModu === "puantaj"} onClick={() => setGunModu("puantaj")} title="SGK prim günü: devamsızlık, rapor ve ücretsiz izin düşülür">
+                Puantaja göre
+              </button>
+              <button type="button" role="tab" aria-selected={gunModu === "tam"} data-aktif={gunModu === "tam"} onClick={() => setGunModu("tam")} title="Herkes 30 gün çalışmış sayılır">
+                Tam ay (30 gün)
+              </button>
+            </div>
             <button type="button" className="btn btn-ikincil ml-auto" onClick={excelIndir} disabled={!hesaplanan.length}>
               <Ikon ad="indir" boyut={16} />
               Excel
@@ -178,7 +197,7 @@ export default function BordroSekmesi({
             <button type="button" className="underline" onClick={() => setGorunum("ayarlar")}>
               Oranlar
             </button>{" "}
-            bölümünden bu yılın resmî rakamlarıyla güncelleyin.
+            bölümünden {eskiYil ? "bu yılın resmî rakamlarıyla güncelleyin" : "kontrol edip firmanız için kaydedin (teşvikli işveren oranı gibi)"}.
           </p>
         </div>
       )}
@@ -238,7 +257,10 @@ export default function BordroSekmesi({
                         {s.ad}
                         <span className="m3 block text-xs">{s.sube}</span>
                       </td>
-                      <td className="sayi px-3 py-2 text-right">{s.primGun}</td>
+                      <td className="sayi px-3 py-2 text-right" title={s.eksikNedeni || undefined}>
+                        {s.primGun}
+                        {s.eksikNedeni && <span className="block whitespace-nowrap text-xs" style={{ color: "var(--uyari)" }}>{s.eksikNedeni}</span>}
+                      </td>
                       {s.b ? (
                         <>
                           <td className="sayi px-3 py-2 text-right">{tlYaz(s.b.ucretBrut)}</td>
@@ -386,6 +408,15 @@ function AyarFormu({ veri, firmaId }: { veri: BordroVerisi; firmaId: string | nu
     setKalemler(VARSAYILAN_MESAI_KALEMLERI);
   }
 
+  async function resmiYukle() {
+    const tamam = await onayla({
+      baslik: `${VARSAYILAN_YASAL.yil} resmî değerleri yüklensin mi?`,
+      metin: `Asgari ücret ${tlYaz(VARSAYILAN_YASAL.asgariBrut)} TL, SGK tavanı ${String(VARSAYILAN_YASAL.sgkTavanKatsayi).replace(".", ",")} kat, işveren SGK payı teşviksiz %${String(VARSAYILAN_YASAL.sgkIsveren).replace(".", ",")} ve ${VARSAYILAN_YASAL.yil} vergi dilimleri yazılır. Mesai çarpanlarınız değişmez. Kaydedince geçerli olur.`,
+      onayEtiketi: "Yükle",
+    });
+    if (tamam) setY(VARSAYILAN_YASAL);
+  }
+
   const kaynakSayisi = (k: MesaiKaynagi) => kalemler.filter((x) => x.aktif && x.kaynak === k).length;
 
   return (
@@ -513,6 +544,11 @@ function AyarFormu({ veri, firmaId }: { veri: BordroVerisi; firmaId: string | nu
       </section>
 
       <div className="flex flex-wrap justify-end gap-2">
+        {y.yil < VARSAYILAN_YASAL.yil && (
+          <button type="button" className="btn btn-ikincil" onClick={resmiYukle}>
+            {VARSAYILAN_YASAL.yil} resmî değerlerini yükle
+          </button>
+        )}
         <button type="button" className="btn btn-hayalet mr-auto" onClick={varsayilan}>
           Varsayılanlara dön
         </button>
