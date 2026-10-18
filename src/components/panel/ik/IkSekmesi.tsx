@@ -8,6 +8,7 @@ import OdemeSekmesi from "./OdemeSekmesi";
 import KontrolListeleriSekmesi from "./KontrolListeleriSekmesi";
 import EgitimSekmesi from "./EgitimSekmesi";
 import PerformansSekmesi from "./PerformansSekmesi";
+import IseAlimSekmesi from "./IseAlimSekmesi";
 
 /** İK işlemleri: her modül kendi verisini kendisi yükler (ana sayfa büyümesin diye) */
 const BOLUMLER = [
@@ -17,6 +18,7 @@ const BOLUMLER = [
   { id: "kontrol", ad: "Giriş / çıkış" },
   { id: "egitim", ad: "Eğitim" },
   { id: "performans", ad: "Performans" },
+  { id: "isealim", ad: "İşe alım" },
 ] as const;
 
 type Bolum = (typeof BOLUMLER)[number]["id"];
@@ -61,6 +63,7 @@ export default function IkSekmesi({
       {bolum === "kontrol" && <KontrolListeleriSekmesi personeller={personeller} yonetici={yonetici} />}
       {bolum === "egitim" && <EgitimSekmesi personeller={personeller} yonetici={yonetici} />}
       {bolum === "performans" && <PerformansSekmesi personeller={personeller} yonetici={yonetici} />}
+      {bolum === "isealim" && <IseAlimSekmesi personeller={personeller} subeler={subeler} yonetici={yonetici} />}
     </div>
   );
 }
