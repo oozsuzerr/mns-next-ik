@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import Link from "next/link";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import { DENEME_GUN } from "../lib/deneme";
+import { DenemeSeridi, ILETISIM_ADRESI, kapaliFirmaMesaji, useFirmaDurumu } from "../components/DenemeDurumu";
 import { aralikPuantajHesapla, aylikPuantajHesapla, type PuantajSatiri } from "../lib/puantaj";
 import { cetvelAktarimi, onayliMesai } from "../lib/puantajCetveli";
 import { disariAktar, type Bicim, type Satir } from "../lib/disaAktar";
@@ -148,26 +151,39 @@ export default function Home() {
     );
   }
 
-  if (!yonetici) {
-    return (
-      <div className="flex min-h-screen items-center justify-center p-4">
-        <div className="panel w-full max-w-sm space-y-4 p-7 text-center">
-          <div className="bos-ikon mx-auto flex h-12 w-12 items-center justify-center rounded-full">
-            <Ikon ad="kilit" boyut={22} />
-          </div>
-          <h2 className="baslik-font m1 text-xl">Yönetici yetkisi yok</h2>
-          <p className="m2 text-sm">
-            {oturum.user.email} hesabı yönetici olarak tanımlı değil. Sistem yöneticisinden yetki isteyin.
-          </p>
-          <button onClick={cikisYap} className="btn btn-ana w-full">
-            Çıkış yap
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (!yonetici) return <YetkiYok eposta={oturum.user.email || ""} onCikis={cikisYap} />;
 
   return <Panel eposta={oturum.user.email || ""} yetki={yonetici} onCikis={cikisYap} />;
+}
+
+/** Panel yetkisi yoksa: firma kapalıysa (deneme süresi dolduysa) nedenini, değilse yetki eksikliğini anlatır */
+function YetkiYok({ eposta, onCikis }: { eposta: string; onCikis: () => void }) {
+  const durum = useFirmaDurumu();
+  const kapali = kapaliFirmaMesaji(durum);
+  if (durum === undefined) {
+    return <div className="m2 flex min-h-screen items-center justify-center text-sm">Yetki kontrol ediliyor...</div>;
+  }
+  return (
+    <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="panel w-full max-w-sm space-y-4 p-7 text-center">
+        <div className="bos-ikon mx-auto flex h-12 w-12 items-center justify-center rounded-full">
+          <Ikon ad="kilit" boyut={22} />
+        </div>
+        <h2 className="baslik-font m1 text-xl">{kapali ? kapali.baslik : "Yönetici yetkisi yok"}</h2>
+        <p className="m2 text-sm">
+          {kapali ? kapali.metin : `${eposta} hesabı yönetici olarak tanımlı değil. Sistem yöneticisinden yetki isteyin.`}
+        </p>
+        {kapali && (
+          <a href={ILETISIM_ADRESI} target="_blank" rel="noreferrer" className="btn btn-ana w-full">
+            Bizimle iletişime geçin
+          </a>
+        )}
+        <button onClick={onCikis} className={`btn w-full ${kapali ? "btn-hayalet" : "btn-ana"}`}>
+          Çıkış yap
+        </button>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -306,6 +322,12 @@ function YoneticiGiris() {
           <button type="submit" disabled={yukleniyor} className="btn btn-ana btn-buyuk w-full">
             {yukleniyor ? "Giriş yapılıyor..." : "Giriş yap"}
           </button>
+          <p className="m2 text-center text-sm">
+            Hesabınız yok mu?{" "}
+            <Link href="/deneme" className="font-semibold underline">
+              {DENEME_GUN} gün ücretsiz deneyin
+            </Link>
+          </p>
         </form>
       </div>
       {unuttumAcik && <SifremiUnuttumFormu ilkEposta={eposta} onKapat={() => setUnuttumAcik(false)} />}
@@ -1924,6 +1946,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
       {/* İçerik */}
       <main className="mx-auto max-w-[1400px] space-y-6 px-4 py-6 pb-28 sm:px-6 lg:px-8 lg:pb-10">
+        <DenemeSeridi />
         {hataMesaji && (
           <div
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold"

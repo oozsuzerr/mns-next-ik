@@ -20,6 +20,9 @@ export async function GET(istek: Request) {
     const simdi = Date.now();
     const bugun = yerelTarih();
 
+    // Deneme süresi dolan firmalar kapatılır (veriler silinmez). Fonksiyon henüz yoksa bildirimler yine gider.
+    const { data: kapananDeneme } = await servis.rpc("deneme_suresi_dolanlari_kapat");
+
     const [per, vard, plan, har, ayar] = await Promise.all([
       servis.from("personeller").select("id, ad, soyad, varsayilan_sube_id, varsayilan_vardiya_id, firma_id").eq("aktif", true),
       servis.from("vardiyalar").select("id, ad, baslangic_saat, bitis_saat, mola_dakika, firma_id").order("created_at"),
@@ -108,7 +111,7 @@ export async function GET(istek: Request) {
       );
     }
 
-    return Response.json({ personel: personeleGiden, yonetici: yoneticiyeGiden, eksik: [...subeyeGore.values()].reduce((a, b) => a + b.sayi, 0) });
+    return Response.json({ personel: personeleGiden, yonetici: yoneticiyeGiden, kapananDeneme: kapananDeneme ?? 0, eksik:[...subeyeGore.values()].reduce((a, b) => a + b.sayi, 0) });
   } catch (err) {
     return Response.json({ hata: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }

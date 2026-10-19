@@ -7,6 +7,7 @@ import { createClient } from "@supabase/supabase-js";
 import { kullaniciIstemcisi } from "../../../../lib/sunucuBildirim";
 import { supabaseUrl, temizle } from "../../../../lib/supabase";
 import { TUM_MODULLER } from "../../../../lib/moduller";
+import { firmaVeYoneticiAc } from "../../../../lib/firmaAc";
 
 function yanit(durum: number, govde: Record<string, unknown>) {
   return Response.json(govde, { status: durum });
@@ -55,49 +56,9 @@ export async function POST(istek: Request) {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: ayniKod } = await servis.from("firmalar").select("id").eq("kod", kod).maybeSingle();
-  if (ayniKod) return yanit(409, { hata: "KOD_KULLANILIYOR" });
+  // 3) Firma, paket ve ilk genel yönetici
+  const sonuc = await firmaVeYoneticiAc(servis, { firmaAd, kod, yoneticiAd, eposta, sifre, moduller, personelLimit });
+  if (!sonuc.ok) return yanit(sonuc.durum, { hata: sonuc.hata, ...(sonuc.detay ? { detay: sonuc.detay } : {}) });
 
-  // 3) Firma (şirket ayarları satırıyla birlikte)
-  const { data: firmaId, error: firmaHata } = await servis.rpc("sistem_firma_olustur", { p_ad: firmaAd, p_kod: kod });
-  if (firmaHata || typeof firmaId !== "string") {
-    return yanit(500, { hata: "FIRMA_ACILAMADI", detay: firmaHata?.message });
-  }
-
-  // Bir adım başarısız olursa yarım kalan firma silinir
-  async function firmayiGeriAl() {
-    await servis.from("sirket_ayarlari").delete().eq("firma_id", firmaId);
-    await servis.from("firmalar").delete().eq("id", firmaId);
-  }
-
-  const { error: paketHata } = await servis.from("firmalar").update({ moduller, personel_limit: personelLimit }).eq("id", firmaId);
-  if (paketHata) {
-    await firmayiGeriAl();
-    return yanit(500, { hata: "PAKET_KAYDEDILEMEDI", detay: paketHata.message });
-  }
-
-  // 4) İlk genel yönetici: her zaman yeni hesap (bir kullanıcı yalnızca tek firmaya bağlıdır)
-  const { data: olusan, error: olusturmaHata } = await servis.auth.admin.createUser({
-    email: eposta,
-    password: sifre,
-    email_confirm: true,
-    user_metadata: yoneticiAd ? { ad: yoneticiAd } : undefined,
-  });
-  if (olusturmaHata || !olusan.user) {
-    await firmayiGeriAl();
-    const zatenVar =
-      olusturmaHata?.code === "email_exists" || /already (been )?registered|already exists/i.test(olusturmaHata?.message ?? "");
-    return yanit(zatenVar ? 409 : 500, { hata: zatenVar ? "EPOSTA_KULLANILIYOR" : "HESAP_ACILAMADI" });
-  }
-
-  const { error: yoneticiHata } = await servis
-    .from("yoneticiler")
-    .insert({ user_id: olusan.user.id, firma_id: firmaId, rol: "GENEL", ad: yoneticiAd || null });
-  if (yoneticiHata) {
-    await servis.auth.admin.deleteUser(olusan.user.id);
-    await firmayiGeriAl();
-    return yanit(500, { hata: "YONETICI_ATANAMADI", detay: yoneticiHata.message });
-  }
-
-  return yanit(200, { ok: true, firma: { id: firmaId, ad: firmaAd, kod } });
+  return yanit(200, { ok: true, firma: { id: sonuc.firmaId, ad: firmaAd, kod } });
 }

@@ -11,6 +11,7 @@ import { kisaTarih, yerelTarih } from "../../lib/tarih";
 import { Bos, Iskelet, Ikon, Marka, Modal, Rozet, useBildirim } from "../../components/ui";
 import { SifreBelirleFormu } from "../../components/SifreFormlari";
 import { MODULLER, TUM_MODULLER } from "../../lib/moduller";
+import { gunEkle } from "../../lib/vardiyaPlani";
 
 interface FirmaSatiri {
   id: string;
@@ -21,6 +22,8 @@ interface FirmaSatiri {
   /** Paket kurulmadan önceki veritabanında gelmez */
   moduller?: string[];
   personel_limit?: number | null;
+  /** Deneme firmasının son günü; kalıcı firmada boş */
+  deneme_bitis?: string | null;
   personel: number;
   sube: number;
   yoneticiler: { eposta: string | null; rol: "GENEL" | "SUBE"; son_giris: string | null }[];
@@ -108,6 +111,21 @@ export default function SistemSayfasi() {
     listeyiGetir();
   }
 
+  async function denemeAyarla(f: FirmaSatiri, bitis: string | null) {
+    const tamam = await onayla({
+      baslik: bitis ? `${f.ad} denemesi uzatılsın mı?` : `${f.ad} kalıcı firma yapılsın mı?`,
+      metin: bitis
+        ? `Deneme ${kisaTarih(bitis)} tarihine kadar uzar; firma kapalıysa yeniden açılır.`
+        : "Deneme süresi kaldırılır, firma kapalıysa açılır. Personel sınırını Paket'ten ayrıca değiştirin.",
+      onayEtiketi: bitis ? "Uzat" : "Kalıcı yap",
+    });
+    if (!tamam) return;
+    const { error } = await supabase.rpc("sistem_deneme_ayarla", { p_firma_id: f.id, p_bitis: bitis });
+    if (error) return bildir(hataYaz(error), "hata");
+    bildir(bitis ? "Deneme uzatıldı." : "Firma kalıcı yapıldı.", "basari");
+    listeyiGetir();
+  }
+
   async function baglantiKopyala(kod: string) {
     try {
       await navigator.clipboard.writeText(mobilBaglanti(kod));
@@ -178,6 +196,7 @@ export default function SistemSayfasi() {
                       <p className="m1 flex items-center gap-2 font-semibold">
                         {f.ad}
                         {f.aktif ? <Rozet ton="giris">Aktif</Rozet> : <Rozet ton="hata">Pasif</Rozet>}
+                        {f.deneme_bitis && <Rozet ton="izin">Deneme · {kisaTarih(f.deneme_bitis)}</Rozet>}
                       </p>
                       <p className="m3 mt-0.5 text-xs">
                         Kod <span className="sayi m2 font-semibold">{f.kod}</span> ·{" "}
@@ -222,6 +241,20 @@ export default function SistemSayfasi() {
                           <Ikon ad="kalem" boyut={14} />
                           Paket
                         </button>
+                      )}
+                      {f.deneme_bitis && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-ikincil btn-kucuk"
+                            onClick={() => denemeAyarla(f, gunEkle(f.deneme_bitis! < yerelTarih() ? yerelTarih() : f.deneme_bitis!, 14))}
+                          >
+                            +14 gün
+                          </button>
+                          <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => denemeAyarla(f, null)}>
+                            Kalıcı yap
+                          </button>
+                        </>
                       )}
                       <button type="button" className="btn btn-ikincil btn-kucuk" onClick={() => setAktarFirma(f)} title="Firmanın bütün verisini indir (yalnızca sistem yöneticisi)">
                         <Ikon ad="indir" boyut={14} />
