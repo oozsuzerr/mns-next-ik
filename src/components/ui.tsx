@@ -5,9 +5,11 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from "react";
 
@@ -354,34 +356,67 @@ export function AcilirMenu({
   hizala?: "sag" | "sol";
   etiket: string;
 }) {
-  const [acik, setAcik] = useState(false);
-  const kapat = useCallback(() => setAcik(false), []);
+  // Menü ekrana sabit konumla açılır: tablo gibi kaydırılabilir kutuların içinde kırpılmaz.
+  // Düğmenin altında yer yoksa yukarı doğru açılır.
+  const [konum, setKonum] = useState<CSSProperties | null>(null);
+  const dugme = useRef<HTMLButtonElement>(null);
+  const kutu = useRef<HTMLDivElement>(null);
+  const kapat = useCallback(() => setKonum(null), []);
+
+  function ac() {
+    const r = dugme.current?.getBoundingClientRect();
+    if (!r) return;
+    const yatay = hizala === "sag" ? { right: Math.max(8, window.innerWidth - r.right) } : { left: Math.max(8, r.left) };
+    setKonum({ position: "fixed", top: r.bottom + 8, ...yatay });
+  }
+
+  // Açıldıktan sonra yüksekliğe bakılır; ekranın altına taşıyorsa düğmenin üstüne alınır
+  useLayoutEffect(() => {
+    if (!konum || !kutu.current || !dugme.current) return;
+    const k = kutu.current.getBoundingClientRect();
+    const r = dugme.current.getBoundingClientRect();
+    if (k.bottom > window.innerHeight - 8 && r.top - k.height - 8 > 8) {
+      setKonum((o) => (o && o.top !== r.top - k.height - 8 ? { ...o, top: r.top - k.height - 8 } : o));
+    }
+  }, [konum]);
 
   useEffect(() => {
-    if (!acik) return;
+    if (!konum) return;
     const onay = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setAcik(false);
+      if (e.key === "Escape") setKonum(null);
+    };
+    // Sayfa kayınca menü düğmeden kopmasın diye kapatılır
+    const kaydir = (e: Event) => {
+      if (kutu.current && e.target instanceof Node && kutu.current.contains(e.target)) return;
+      setKonum(null);
     };
     window.addEventListener("keydown", onay);
-    return () => window.removeEventListener("keydown", onay);
-  }, [acik]);
+    window.addEventListener("scroll", kaydir, true);
+    window.addEventListener("resize", kapat);
+    return () => {
+      window.removeEventListener("keydown", onay);
+      window.removeEventListener("scroll", kaydir, true);
+      window.removeEventListener("resize", kapat);
+    };
+  }, [konum, kapat]);
 
   return (
     <div className="relative">
       <button
+        ref={dugme}
         type="button"
         className={sinif}
         aria-haspopup="menu"
-        aria-expanded={acik}
+        aria-expanded={!!konum}
         aria-label={etiket}
-        onClick={() => setAcik(!acik)}
+        onClick={() => (konum ? kapat() : ac())}
       >
         {tetikleyici}
       </button>
-      {acik && (
+      {konum && (
         <>
           <div className="fixed inset-0 z-40" onClick={kapat} />
-          <div role="menu" className={`menu-kutu absolute z-50 mt-2 ${hizala === "sag" ? "right-0" : "left-0"}`}>
+          <div ref={kutu} role="menu" className="menu-kutu z-50" style={konum}>
             {children(kapat)}
           </div>
         </>
