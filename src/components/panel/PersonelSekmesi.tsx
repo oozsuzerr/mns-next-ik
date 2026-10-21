@@ -6,6 +6,7 @@ import { gunYaz, tcMaske } from "../../lib/tipler";
 import { kisaTarih, yerelTarih } from "../../lib/tarih";
 import { disariAktar } from "../../lib/disaAktar";
 import { AcilirMenu, Avatar, Bos, Ikon, Rozet, useBildirim, type RozetTon } from "../ui";
+import MobilBaglanti from "./MobilBaglanti";
 
 type Liste = "aktif" | "izinli" | "devamsiz" | "tum" | "cikan";
 type Siralama = "ad" | "departman" | "unvan" | "sube" | "vardiya" | "giris" | "cikis";
@@ -40,8 +41,11 @@ export default function PersonelSekmesi({
   onPin,
   onCihaz,
   onAktif,
+  firma,
 }: {
   personeller: Personel[];
+  /** Firmaya özel personel giriş bağlantısı için (kod yoksa düğme görünmez) */
+  firma?: { ad: string; kod: string } | null;
   /** personel id -> yıllık izin bakiyesi */
   bakiyeler: Record<string, IzinBakiyesi>;
   /** Bugün izinli / gelmeyen / içeride olanlar (Bugün özetiyle aynı hesap) */
@@ -282,6 +286,7 @@ export default function PersonelSekmesi({
             <Ikon ad="indir" boyut={14} />
             Excel
           </button>
+          {firma?.kod && <MobilBaglanti firmaKod={firma.kod} firmaAd={firma.ad} />}
           {onYeni && (
             <button type="button" className="btn btn-ana btn-kucuk" onClick={onYeni}>
               <Ikon ad="arti" boyut={14} />

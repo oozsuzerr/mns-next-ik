@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { DENEME_GUN } from "../lib/deneme";
+import { mobilAdresi } from "../components/panel/MobilBaglanti";
 import { DenemeSeridi, ILETISIM_ADRESI, kapaliFirmaMesaji, useFirmaDurumu } from "../components/DenemeDurumu";
 import { aralikPuantajHesapla, aylikPuantajHesapla, type PuantajSatiri } from "../lib/puantaj";
 import { cetvelAktarimi, onayliMesai } from "../lib/puantajCetveli";
@@ -1763,7 +1764,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
               Firmalar
             </a>
           )}
-          <a href="/mobil" target="_blank" rel="noopener noreferrer" className="nav-oge">
+          <a href={mobilAdresi(yetki.firma?.kod)} target="_blank" rel="noopener noreferrer" className="nav-oge">
             <Ikon ad="telefon" />
             Mobil ekranı aç
           </a>
@@ -2131,6 +2132,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 onGorevBilgisi={yetkili("personel") ? (p) => setForm({ tur: "gorevBilgi", hedef: p }) : undefined}
                 onOzluk={genel ? (p) => setForm({ tur: "ozluk", hedef: p }) : undefined}
                 onTazminat={genel ? (p) => setForm({ tur: "tazminat", hedef: p }) : undefined}
+                firma={yetki.firma}
                 onYeni={yetkili("personel") ? () => setForm({ tur: "personel" }) : undefined}
                 onPin={yetkili("pin") ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
                 onCihaz={yetkili("cihaz") ? cihazSifirla : undefined}
@@ -2328,7 +2330,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 Firmalar
               </a>
             )}
-            <a href="/mobil" target="_blank" rel="noopener noreferrer" className="btn btn-ikincil w-full">
+            <a href={mobilAdresi(yetki.firma?.kod)} target="_blank" rel="noopener noreferrer" className="btn btn-ikincil w-full">
               <Ikon ad="telefon" boyut={16} />
               Mobil ekranı aç
             </a>
