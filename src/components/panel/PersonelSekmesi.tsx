@@ -38,6 +38,7 @@ export default function PersonelSekmesi({
   onTazminat,
   onOzluk,
   onYeni,
+  onAktar,
   onPin,
   onCihaz,
   onAktif,
@@ -61,6 +62,8 @@ export default function PersonelSekmesi({
   onOzluk?: (p: Personel) => void;
   /** Verilmezse (şube müdürü) ilgili düğmeler gizlenir */
   onYeni?: () => void;
+  /** Excel şablonuyla toplu personel ekleme */
+  onAktar?: () => void;
   onPin?: (p: Personel) => void;
   onCihaz?: (p: Personel) => void;
   onAktif?: (p: Personel) => void;
@@ -287,6 +290,12 @@ export default function PersonelSekmesi({
             Excel
           </button>
           {firma?.kod && <MobilBaglanti firmaKod={firma.kod} firmaAd={firma.ad} />}
+          {onAktar && (
+            <button type="button" className="btn btn-ikincil btn-kucuk" onClick={onAktar}>
+              <Ikon ad="rapor" boyut={14} />
+              Excel&apos;den aktar
+            </button>
+          )}
           {onYeni && (
             <button type="button" className="btn btn-ana btn-kucuk" onClick={onYeni}>
               <Ikon ad="arti" boyut={14} />

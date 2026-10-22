@@ -40,6 +40,7 @@ import PuantajKarti from "../components/panel/PuantajKarti";
 import TaleplerSekmesi from "../components/panel/TaleplerSekmesi";
 import LoglarSekmesi from "../components/panel/LoglarSekmesi";
 import PersonelSekmesi from "../components/panel/PersonelSekmesi";
+import PersonelAktarim from "../components/panel/PersonelAktarim";
 import SubelerSekmesi from "../components/panel/SubelerSekmesi";
 import IkSekmesi, { ikBolumleri } from "../components/panel/ik/IkSekmesi";
 import RaporlarSekmesi from "../components/panel/RaporlarSekmesi";
@@ -341,6 +342,7 @@ function YoneticiGiris() {
 // =====================================================================
 type FormDurumu =
   | { tur: "personel" }
+  | { tur: "aktar" }
   | { tur: "pin"; hedef: Personel }
   | { tur: "vardiya"; duzenlenen: Vardiya | null }
   | { tur: "izin" }
@@ -1905,6 +1907,20 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                       Yeni personel
                     </button>
                   )}
+                  {yetkili("personel") && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="menu-oge"
+                      onClick={() => {
+                        kapat();
+                        setForm({ tur: "aktar" });
+                      }}
+                    >
+                      <Ikon ad="rapor" boyut={16} />
+                      Excel&apos;den personel aktar
+                    </button>
+                  )}
                   {yetkili("manuel") && (
                     <button
                       type="button"
@@ -2134,6 +2150,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
                 onTazminat={genel ? (p) => setForm({ tur: "tazminat", hedef: p }) : undefined}
                 firma={yetki.firma}
                 onYeni={yetkili("personel") ? () => setForm({ tur: "personel" }) : undefined}
+                onAktar={yetkili("personel") ? () => setForm({ tur: "aktar" }) : undefined}
                 onPin={yetkili("pin") ? (p) => setForm({ tur: "pin", hedef: p }) : undefined}
                 onCihaz={yetkili("cihaz") ? cihazSifirla : undefined}
                 onAktif={yetkili("personel") ? personelAktifDegistir : undefined}
@@ -2364,6 +2381,9 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
 
       {form?.tur === "personel" && (
         <PersonelFormu subeler={subeler} vardiyalar={vardiyalar} onKapat={() => setForm(null)} onKayit={yenile} />
+      )}
+      {form?.tur === "aktar" && (
+        <PersonelAktarim subeler={subeler} vardiyalar={vardiyalar} personeller={personeller} onKapat={() => setForm(null)} onKayit={yenile} />
       )}
       {form?.tur === "pin" && <PinFormu hedef={form.hedef} onKapat={() => setForm(null)} onKayit={yenile} />}
       {form?.tur === "ozluk" && <OzlukKarti hedef={form.hedef} onKapat={() => setForm(null)} />}
