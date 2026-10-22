@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { supabase } from "../../../lib/supabase";
-import { hataYaz, type Personel, type Sube, type YoneticiBilgisi } from "../../../lib/tipler";
+import { hataYaz, type Personel, type Sube, type Vardiya, type YoneticiBilgisi } from "../../../lib/tipler";
+import { PersonelFormu } from "../Formlar";
 import { kisaTarih, yerelSaat, yerelTarih } from "../../../lib/tarih";
 import { gunEkle } from "../../../lib/vardiyaPlani";
 import { Bos, Ikon, Iskelet, Modal, Rozet, useBildirim, type RozetTon } from "../../ui";
@@ -73,7 +74,20 @@ interface Gorusme {
   notlar: string | null;
 }
 
-export default function IseAlimSekmesi({ personeller, subeler, yonetici }: { personeller: Personel[]; subeler: Sube[]; yonetici: YoneticiBilgisi }) {
+export default function IseAlimSekmesi({
+  personeller,
+  subeler,
+  vardiyalar,
+  yonetici,
+  onPersonelEklendi,
+}: {
+  personeller: Personel[];
+  subeler: Sube[];
+  vardiyalar: Vardiya[];
+  yonetici: YoneticiBilgisi;
+  /** İşe alınan adaydan personel kaydı açılınca paneldeki personel listesi yenilenir */
+  onPersonelEklendi?: () => void;
+}) {
   const { bildir, onayla } = useBildirim();
   const genel = yonetici.rol === "GENEL";
   const yazabilir = genel || yonetici.yetkiler.includes("personel");
@@ -86,6 +100,8 @@ export default function IseAlimSekmesi({ personeller, subeler, yonetici }: { per
   const [adayForm, setAdayForm] = useState(false);
   const [adayDetay, setAdayDetay] = useState<string | null>(null);
   const [kapalilar, setKapalilar] = useState(false);
+  // İşe alınan adaydan açılan personel kaydı
+  const [personelAday, setPersonelAday] = useState<Aday | null>(null);
 
   const subeAdi = useMemo(() => new Map(subeler.map((s) => [s.id, s.ad])), [subeler]);
   const ilanSubeleri = genel ? subeler : subeler.filter((s) => yonetici.subeler.includes(s.id));
@@ -214,6 +230,8 @@ export default function IseAlimSekmesi({ personeller, subeler, yonetici }: { per
           onAdayEkle={() => setAdayForm(true)}
           onAdayAc={(id) => setAdayDetay(id)}
           onAsama={async (a, asama) => {
+            // İşe alınan aday, personel kaydı açılıp ona bağlanınca işaretlenir
+            if (asama === "İşe alındı" && !a.personel_id) return setPersonelAday(a);
             const { error } = await supabase.from("adaylar").update({ asama }).eq("id", a.id);
             if (error) return bildir(hataYaz(error), "hata");
             await getir();
@@ -277,6 +295,41 @@ export default function IseAlimSekmesi({ personeller, subeler, yonetici }: { per
           yazanAd={yonetici.ad}
           onKapat={() => setAdayDetay(null)}
           onDegisti={getir}
+          onPersonelOlustur={
+            yazabilir
+              ? () => {
+                  setAdayDetay(null);
+                  setPersonelAday(secili);
+                }
+              : undefined
+          }
+        />
+      )}
+      {personelAday && (
+        <PersonelFormu
+          baslik={`${personelAday.ad} ${personelAday.soyad}: personel kaydı`}
+          subeler={ilanSubeleri}
+          vardiyalar={vardiyalar}
+          baslangic={(() => {
+            const i = ilanlar.find((x) => x.id === personelAday.ilan_id);
+            return {
+              ad: personelAday.ad,
+              soyad: personelAday.soyad,
+              departman: i?.departman ?? undefined,
+              unvan: i?.baslik,
+              varsayilan_sube_id: i?.sube_id ?? undefined,
+              ise_giris_tarihi: yerelTarih(),
+            };
+          })()}
+          onKapat={() => setPersonelAday(null)}
+          onKayit={async (id) => {
+            const a = personelAday;
+            const { error } = await supabase.from("adaylar").update({ asama: "İşe alındı", personel_id: id }).eq("id", a.id);
+            if (error) bildir(`Personel eklendi ama aday bağlanamadı: ${hataYaz(error)}`, "hata");
+            else bildir(`${a.ad} ${a.soyad} işe alındı ve personel kaydına bağlandı. İşe başlama listesi İK → Giriş / çıkış'ta önerilir.`, "basari");
+            onPersonelEklendi?.();
+            await getir();
+          }}
         />
       )}
     </div>
@@ -669,6 +722,7 @@ function AdayDetay({
   yazanAd,
   onKapat,
   onDegisti,
+  onPersonelOlustur,
 }: {
   aday: Aday;
   firmaId: string | null;
@@ -678,6 +732,8 @@ function AdayDetay({
   yazanAd: string | null;
   onKapat: () => void;
   onDegisti: () => Promise<void>;
+  /** Adayın bilgileriyle dolu personel formunu açar */
+  onPersonelOlustur?: () => void;
 }) {
   const { bildir, onayla } = useBildirim();
   const [asama, setAsama] = useState<Asama>(a.asama);
@@ -864,8 +920,14 @@ function AdayDetay({
                   </option>
                 ))}
               </select>
+              {onPersonelOlustur && !a.personel_id && (
+                <button type="button" className="btn btn-ana btn-kucuk mt-2" onClick={onPersonelOlustur}>
+                  <Ikon ad="personel" boyut={14} />
+                  Personel kaydı oluştur
+                </button>
+              )}
               <p className="m3 mt-1 text-xs">
-                Önce Personel sekmesinden &quot;Ekle → Personel&quot; ile kaydı açın, sonra burada bağlayın. İşe başlama kontrol listesi İK → Giriş / çıkış&apos;ta önerilir.
+                Personel kaydı oluşturunca adayın adı, ilanın şubesi, departmanı ve pozisyonu forma dolu gelir; kayıt adaya otomatik bağlanır. Daha önce eklediyseniz listeden seçip kaydedin. İşe başlama kontrol listesi İK → Giriş / çıkış&apos;ta önerilir.
               </p>
             </div>
           )}

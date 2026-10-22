@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { MesaiTalebi, Personel, Sube, YoneticiBilgisi } from "../../../lib/tipler";
+import type { MesaiTalebi, Personel, Sube, Vardiya, YoneticiBilgisi } from "../../../lib/tipler";
 import DuyurularSekmesi from "./DuyurularSekmesi";
 import ZimmetSekmesi from "./ZimmetSekmesi";
 import OdemeSekmesi from "./OdemeSekmesi";
@@ -45,7 +45,12 @@ export default function IkSekmesi({
   onAyDegis,
   onHareketDuzelt,
   bolum: disBolum,
+  vardiyalar,
+  onPersonelEklendi,
 }: {
+  /** İşe alımda adaydan personel kaydı açmak için */
+  vardiyalar: Vardiya[];
+  onPersonelEklendi?: () => void;
   personeller: Personel[];
   subeler: Sube[];
   yonetici: YoneticiBilgisi;
@@ -97,7 +102,7 @@ export default function IkSekmesi({
       {bolum === "bordro" && (
         <BordroSekmesi puantaj={puantaj} mesaiTalepleri={mesaiTalepleri} seciliAy={seciliAy} onAyDegis={onAyDegis} yonetici={yonetici} onHareketDuzelt={onHareketDuzelt} />
       )}
-      {bolum === "isealim" && <IseAlimSekmesi personeller={personeller} subeler={subeler} yonetici={yonetici} />}
+      {bolum === "isealim" && <IseAlimSekmesi personeller={personeller} subeler={subeler} vardiyalar={vardiyalar} yonetici={yonetici} onPersonelEklendi={onPersonelEklendi} />}
     </div>
   );
 }

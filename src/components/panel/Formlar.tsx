@@ -35,25 +35,32 @@ function Altlik({ onKapat, yukleniyor, kaydetEtiket }: { onKapat: () => void; yu
 export function PersonelFormu({
   subeler,
   vardiyalar,
+  baslangic,
+  baslik = "Yeni personel",
   onKapat,
   onKayit,
 }: {
   subeler: Sube[];
   vardiyalar: Vardiya[];
+  /** Önceden doldurulacak alanlar (ör. işe alınan adaydan) */
+  baslangic?: { ad?: string; soyad?: string; departman?: string; unvan?: string; varsayilan_sube_id?: string; ise_giris_tarihi?: string };
+  baslik?: string;
   onKapat: () => void;
-  onKayit: () => void;
+  /** Eklenen personelin id'siyle çağrılır */
+  onKayit: (id: string) => void;
 }) {
   const { bildir, onayla } = useBildirim();
   const [yukleniyor, setYukleniyor] = useState(false);
   const [f, setF] = useState({
     sicil_no: "",
     tc_kimlik: "",
-    ad: "",
-    soyad: "",
-    departman: "Genel",
-    unvan: "",
-    varsayilan_sube_id: "",
+    ad: baslangic?.ad ?? "",
+    soyad: baslangic?.soyad ?? "",
+    departman: baslangic?.departman || "Genel",
+    unvan: baslangic?.unvan ?? "",
+    varsayilan_sube_id: baslangic?.varsayilan_sube_id ?? "",
     varsayilan_vardiya_id: "",
+    ise_giris_tarihi: baslangic?.ise_giris_tarihi ?? "",
     pin: "",
   });
 
@@ -92,6 +99,7 @@ export function PersonelFormu({
             unvan: f.unvan.trim() || null,
             varsayilan_sube_id: f.varsayilan_sube_id || null,
             varsayilan_vardiya_id: f.varsayilan_vardiya_id || null,
+            ise_giris_tarihi: f.ise_giris_tarihi || null,
             rol: "PERSONEL",
             aktif: true,
           },
@@ -107,7 +115,7 @@ export function PersonelFormu({
       if (pinHata) throw pinHata;
 
       bildir(`${f.ad.trim()} ${f.soyad.trim()} eklendi.`, "basari");
-      onKayit();
+      onKayit(data.id);
       onKapat();
     } catch (err) {
       bildir(hataYaz(err), "hata");
@@ -117,7 +125,7 @@ export function PersonelFormu({
   }
 
   return (
-    <Modal onKapat={onKapat} baslik="Yeni personel">
+    <Modal onKapat={onKapat} baslik={baslik}>
       <form onSubmit={kaydet} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <Alan etiket="Ad">
@@ -198,6 +206,14 @@ export function PersonelFormu({
               placeholder="4-8 rakam"
               value={f.pin}
               onChange={(e) => setF({ ...f, pin: e.target.value.replace(/\D/g, "") })}
+            />
+          </Alan>
+          <Alan etiket="İşe giriş tarihi">
+            <input
+              className="girdi sayi"
+              type="date"
+              value={f.ise_giris_tarihi}
+              onChange={(e) => setF({ ...f, ise_giris_tarihi: e.target.value })}
             />
           </Alan>
         </div>

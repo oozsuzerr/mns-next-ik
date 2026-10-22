@@ -2170,6 +2170,8 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
             onAyDegis={ayDegistir}
             onHareketDuzelt={yetkili("manuel") ? (baslangic) => setForm({ tur: "manuel", baslangic }) : undefined}
             bolum={etkinIk}
+            vardiyalar={vardiyalar}
+            onPersonelEklendi={() => yenile()}
           />
         )}
 
@@ -2380,7 +2382,7 @@ function Panel({ eposta, yetki, onCikis }: { eposta: string; yetki: YoneticiBilg
       )}
 
       {form?.tur === "personel" && (
-        <PersonelFormu subeler={subeler} vardiyalar={vardiyalar} onKapat={() => setForm(null)} onKayit={yenile} />
+        <PersonelFormu subeler={subeler} vardiyalar={vardiyalar} onKapat={() => setForm(null)} onKayit={() => yenile()} />
       )}
       {form?.tur === "aktar" && (
         <PersonelAktarim subeler={subeler} vardiyalar={vardiyalar} personeller={personeller} onKapat={() => setForm(null)} onKayit={yenile} />
