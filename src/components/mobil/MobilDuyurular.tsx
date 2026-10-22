@@ -20,7 +20,7 @@ interface MobilDuyuru {
  * Personelin telefonundaki duyurular: okunmamışlar açık durur ve "Okudum" ister,
  * okunanlar başlık olarak kalır. Veritabanında duyuru bölümü kurulu değilse hiçbir şey göstermez.
  */
-export default function MobilDuyurular({ token }: { token: string }) {
+export default function MobilDuyurular({ token, bosMetin }: { token: string; bosMetin?: string }) {
   const [duyurular, setDuyurular] = useState<MobilDuyuru[] | null>(null);
   const [acik, setAcik] = useState<string | null>(null);
   const [hepsi, setHepsi] = useState(false);
@@ -45,7 +45,8 @@ export default function MobilDuyurular({ token }: { token: string }) {
     if (!error) setDuyurular((l) => l?.map((d) => (d.id === id ? { ...d, okundu: true } : d)) ?? l);
   }
 
-  if (!duyurular || duyurular.length === 0) return null;
+  if (!duyurular) return null;
+  if (duyurular.length === 0) return bosMetin ? <p className="panel m3 p-4 text-sm">{bosMetin}</p> : null;
 
   const okunmamis = duyurular.filter((d) => !d.okundu);
   const okunan = duyurular.filter((d) => d.okundu);

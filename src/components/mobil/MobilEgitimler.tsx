@@ -16,7 +16,7 @@ interface MobilEgitim {
 }
 
 /** Personelin aldığı eğitimler (her türün en sonu) ve geçerlilikleri. Kayıt yoksa hiçbir şey göstermez. */
-export default function MobilEgitimler({ token }: { token: string }) {
+export default function MobilEgitimler({ token, bosMetin }: { token: string; bosMetin?: string }) {
   const [liste, setListe] = useState<MobilEgitim[] | null>(null);
 
   useEffect(() => {
@@ -25,7 +25,8 @@ export default function MobilEgitimler({ token }: { token: string }) {
     });
   }, [token]);
 
-  if (!liste || liste.length === 0) return null;
+  if (!liste) return null;
+  if (liste.length === 0) return bosMetin ? <p className="panel m3 p-4 text-sm">{bosMetin}</p> : null;
   const bugun = yerelTarih();
   const yaklasma = gunEkle(bugun, 30);
 

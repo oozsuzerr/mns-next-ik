@@ -40,7 +40,8 @@ function GunOzeti({ etiket, gp }: { etiket: string; gp: GunPlani }) {
   );
 }
 
-export function VardiyamKarti({ gunPlaniBul }: { gunPlaniBul: (tarih: string) => GunPlani }) {
+/** Bugün ve yarın; gomulu ise aylık takvim altında açık durur, değilse düğmeyle pencerede açılır */
+export function VardiyamKarti({ gunPlaniBul, gomulu = false }: { gunPlaniBul: (tarih: string) => GunPlani; gomulu?: boolean }) {
   const [takvimAcik, setTakvimAcik] = useState(false);
   const bugun = yerelTarih();
 
@@ -48,16 +49,24 @@ export function VardiyamKarti({ gunPlaniBul }: { gunPlaniBul: (tarih: string) =>
     <section>
       <div className="mb-2 flex items-center justify-between px-1">
         <h2 className="baslik-font m1 text-lg">Vardiyam</h2>
-        <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => setTakvimAcik(true)}>
-          <Ikon ad="takvim" boyut={15} />
-          Aylık takvim
-        </button>
+        {!gomulu && (
+          <button type="button" className="btn btn-hayalet btn-kucuk" onClick={() => setTakvimAcik(true)}>
+            <Ikon ad="takvim" boyut={15} />
+            Aylık takvim
+          </button>
+        )}
       </div>
       <div className="flex gap-2">
         <GunOzeti etiket="Bugün" gp={gunPlaniBul(bugun)} />
         <GunOzeti etiket="Yarın" gp={gunPlaniBul(gunEkle(bugun, 1))} />
       </div>
-      {takvimAcik && <VardiyaTakvimi gunPlaniBul={gunPlaniBul} onKapat={() => setTakvimAcik(false)} />}
+      {gomulu ? (
+        <div className="panel mt-3 p-4">
+          <VardiyaTakvimi gunPlaniBul={gunPlaniBul} />
+        </div>
+      ) : (
+        takvimAcik && <VardiyaTakvimi gunPlaniBul={gunPlaniBul} onKapat={() => setTakvimAcik(false)} />
+      )}
     </section>
   );
 }
@@ -67,7 +76,8 @@ function VardiyaTakvimi({
   onKapat,
 }: {
   gunPlaniBul: (tarih: string) => GunPlani;
-  onKapat: () => void;
+  /** Verilmezse takvim pencere yerine sayfa içinde gösterilir */
+  onKapat?: () => void;
 }) {
   const bugun = yerelTarih();
   const sonBilinen = gunEkle(bugun, PLAN_ILERI_GUN);
@@ -95,8 +105,8 @@ function VardiyaTakvimi({
 
   const seciliPlan = secili <= sonBilinen ? gunPlaniBul(secili) : null;
 
-  return (
-    <Modal onKapat={onKapat} baslik="Vardiya takvimi">
+  const icerik = (
+    <>
       <div className="mb-3 flex items-center justify-between">
         <button
           type="button"
@@ -189,6 +199,13 @@ function VardiyaTakvimi({
         {gunler.some((t) => t > sonBilinen) ? " (yayınlanan günler)" : ""}
       </p>
       <p className="ipucu">Vardiyanız değişirse yöneticiniz planı günceller; uygulamayı açtığınızda en güncel hali görünür.</p>
+    </>
+  );
+  return onKapat ? (
+    <Modal onKapat={onKapat} baslik="Vardiya takvimi">
+      {icerik}
     </Modal>
+  ) : (
+    icerik
   );
 }

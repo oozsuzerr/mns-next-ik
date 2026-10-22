@@ -16,7 +16,7 @@ interface MobilZimmet {
 }
 
 /** Personelin üzerindeki eşyalar (ve son bir yılda iade ettikleri). Kayıt yoksa hiçbir şey göstermez. */
-export default function MobilZimmetler({ token }: { token: string }) {
+export default function MobilZimmetler({ token, bosMetin }: { token: string; bosMetin?: string }) {
   const [liste, setListe] = useState<MobilZimmet[] | null>(null);
 
   useEffect(() => {
@@ -25,7 +25,8 @@ export default function MobilZimmetler({ token }: { token: string }) {
     });
   }, [token]);
 
-  if (!liste || liste.length === 0) return null;
+  if (!liste) return null;
+  if (liste.length === 0) return bosMetin ? <p className="panel m3 p-4 text-sm">{bosMetin}</p> : null;
 
   return (
     <section>

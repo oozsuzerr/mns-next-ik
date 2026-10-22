@@ -22,7 +22,7 @@ interface MobilDegerlendirme {
 }
 
 /** Personelin tamamlanmış performans değerlendirmeleri; görülmemiş olan açık durur ve "Gördüm" ister */
-export default function MobilPerformans({ token }: { token: string }) {
+export default function MobilPerformans({ token, bosMetin }: { token: string; bosMetin?: string }) {
   const [liste, setListe] = useState<MobilDegerlendirme[] | null>(null);
   const [acik, setAcik] = useState<string | null>(null);
   const [isleniyor, setIsleniyor] = useState(false);
@@ -46,7 +46,8 @@ export default function MobilPerformans({ token }: { token: string }) {
     if (!error) setListe((l) => l?.map((d) => (d.id === id ? { ...d, personel_gordu: new Date().toISOString() } : d)) ?? l);
   }
 
-  if (!liste || liste.length === 0) return null;
+  if (!liste) return null;
+  if (liste.length === 0) return bosMetin ? <p className="panel m3 p-4 text-sm">{bosMetin}</p> : null;
 
   return (
     <section>

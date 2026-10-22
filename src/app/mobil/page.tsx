@@ -4,14 +4,16 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useState, type FormEvent } from "react";
 import { supabase } from "../../lib/supabase";
 import { kisaTarih, selamlama, sureYaz, uzunTarih, yerelSaat, yerelSaatSn, yerelTarih } from "../../lib/tarih";
-import { Avatar, Ikon, Marka, Modal, useBildirim } from "../../components/ui";
+import { Avatar, Ikon, Marka, Modal, useBildirim, type IkonAdi } from "../../components/ui";
 import { cikisiEksikGirisler, suankiGiris, type MesaiVardiya, type VardiyaBilgisi } from "../../lib/mesai";
-import { gunPlani, planHaritasi, vardiyaCozucu, type GunPlani, type PlanSatiri, type PlanVardiya } from "../../lib/vardiyaPlani";
+import { gunEkle, gunPlani, planHaritasi, vardiyaCozucu, type GunPlani, type PlanSatiri, type PlanVardiya } from "../../lib/vardiyaPlani";
 import { VardiyamKarti } from "../../components/mobil/Vardiyam";
 import BildirimDugmesi from "../../components/BildirimDugmesi";
 import MobilDuyurular from "../../components/mobil/MobilDuyurular";
 import MobilZimmetler from "../../components/mobil/MobilZimmetler";
-import MobilOdemeler from "../../components/mobil/MobilOdemeler";
+import MobilOdemeler, { useOdemeler } from "../../components/mobil/MobilOdemeler";
+import { AvansKarti, SaatlikIzinKarti, VardiyaKarti, YillikIzinKarti } from "../../components/mobil/OzetKartlari";
+import { avansOzeti, saatlikIzinOzeti } from "../../lib/mobilOzet";
 import MobilEgitimler from "../../components/mobil/MobilEgitimler";
 import MobilPerformans from "../../components/mobil/MobilPerformans";
 import MobilGorevler from "../../components/mobil/MobilGorevler";
@@ -177,6 +179,7 @@ function Kadran({
   ana,
   alt,
   onBas,
+  kucuk = false,
 }: {
   durum: KadranDurumu;
   islem: "giris" | "cikis";
@@ -184,6 +187,7 @@ function Kadran({
   ana: string;
   alt: string;
   onBas: () => void;
+  kucuk?: boolean;
 }) {
   const R = 118;
   const C = 2 * Math.PI * R;
@@ -195,7 +199,7 @@ function Kadran({
   const ikon = durum === "tamam" ? "tik" : durum === "uzakta" || durum === "bekliyor" ? "konum" : islem === "giris" ? "gunes" : "ay";
 
   return (
-    <div className="kadran-kap">
+    <div className={`kadran-kap ${kucuk ? "kadran-kucuk" : ""}`}>
       <svg viewBox="0 0 260 260" className="kadran-halka" aria-hidden="true">
         <circle cx="130" cy="130" r={R} fill="none" stroke="var(--cizgi)" strokeWidth="10" />
         <circle
@@ -220,6 +224,32 @@ function Kadran({
     </div>
   );
 }
+
+/** Talepler sekmesindeki büyük talep düğmesi */
+function TalepDugmesi({ ikon, baslik, aciklama, onBas }: { ikon: IkonAdi; baslik: string; aciklama: string; onBas: () => void }) {
+  return (
+    <button type="button" onClick={onBas} className="panel flex flex-col items-start gap-2 p-4 text-left">
+      <span className="bos-ikon flex h-10 w-10 items-center justify-center rounded-full">
+        <Ikon ad={ikon} />
+      </span>
+      <span>
+        <span className="m1 block font-semibold">{baslik}</span>
+        <span className="m3 block text-xs">{aciklama}</span>
+      </span>
+    </button>
+  );
+}
+
+function DurumRozeti({ durum }: { durum: string | null }) {
+  return (
+    <span className={`rozet ${durum === "ONAYLANDI" ? "rozet-giris" : durum === "REDDEDILDI" ? "rozet-hata" : "rozet-uyari"}`}>
+      {durum === "ONAYLANDI" ? "Onaylandı" : durum === "REDDEDILDI" ? "Reddedildi" : "Bekliyor"}
+    </span>
+  );
+}
+
+type Sekme = "ana" | "talepler" | "vardiya" | "menu";
+type MenuBolum = "duyuru" | "gorev" | "zimmet" | "egitim" | "performans" | "maas";
 
 // ---------------------------------------------------------------------
 // Sayfa
@@ -302,12 +332,41 @@ function MobilGirisEkrani() {
   const konumAcik = profilHazir && !kvkkBekliyor;
   const modulHazir = !!token && moduller?.token === token;
   const modul = (m: Parameters<typeof modulAcik>[1]) => modulHazir && modulAcik(moduller?.liste, m);
+  // Alt sekmeler ve menüden açılan bölüm
+  const [sekme, setSekme] = useState<Sekme>("ana");
+  const [menuBolum, setMenuBolum] = useState<MenuBolum | null>(null);
+  const [odemeFormu, setOdemeFormu] = useState<"Avans" | "Masraf" | null>(null);
+  const odemeler = useOdemeler(token && modul("odeme") ? token : null);
+  // Zil ve menü sayaçları: okunmamış duyuru ve açık görev (ana sayfaya her dönüşte yenilenir)
+  const [rozet, setRozet] = useState({ duyuru: 0, gorev: 0 });
+  const duyuruAcik = modul("duyuru");
+  const gorevAcik = modul("gorev");
+  useEffect(() => {
+    if (!token || sekme !== "ana") return;
+    let iptal = false;
+    Promise.all([
+      duyuruAcik ? Promise.resolve(supabase.rpc("mobil_duyurular", { p_token: token })) : null,
+      gorevAcik ? Promise.resolve(supabase.rpc("mobil_gorevler", { p_token: token })) : null,
+    ]).then(([d, g]) => {
+      if (iptal) return;
+      setRozet({
+        duyuru: d && !d.error ? ((d.data ?? []) as { okundu: boolean }[]).filter((x) => !x.okundu).length : 0,
+        gorev: g && !g.error ? ((g.data ?? []) as { acik: boolean }[]).filter((x) => x.acik).length : 0,
+      });
+    });
+    return () => {
+      iptal = true;
+    };
+  }, [token, sekme, duyuruAcik, gorevAcik]);
   const [mesaiAcik, setMesaiAcik] = useState(false);
   const [mesaiYukleniyor, setMesaiYukleniyor] = useState(false);
   const [mesai, setMesai] = useState({ tarih: "", baslangic_saat: "17:00", bitis_saat: "19:00", neden: "" });
 
   const oturumuTemizle = useCallback(() => {
     localStorage.removeItem(TOKEN_ANAHTAR);
+    setSekme("ana");
+    setMenuBolum(null);
+    setRozet({ duyuru: 0, gorev: 0 });
     setToken(null);
     setPersonel(null);
     setSubeler([]);
@@ -905,326 +964,428 @@ function MobilGirisEkrani() {
     ? "Bugünkü çıkışınız kaydedildi."
     : "Henüz giriş yapmadınız.";
 
+  // Bilgi kartları
+  const vardiyaVar = !!plan || !!vardiya;
+  const odemeAcik = modul("odeme") && odemeler.liste !== null;
+  const saatlik = talepler ? saatlikIzinOzeti(talepler, bugun) : null;
+  const avans = odemeAcik && odemeler.liste ? avansOzeti(odemeler.liste, bugun) : null;
+
+  const menuOgeleri: { id: MenuBolum; ad: string; ikon: IkonAdi; sayi?: number }[] = [
+    ...(modul("duyuru") ? [{ id: "duyuru" as const, ad: "Duyurular", ikon: "zil" as const, sayi: rozet.duyuru }] : []),
+    ...(modul("gorev") ? [{ id: "gorev" as const, ad: "Görevlerim", ikon: "tik" as const, sayi: rozet.gorev }] : []),
+    ...(modul("zimmet") ? [{ id: "zimmet" as const, ad: "Zimmetimdeki eşyalar", ikon: "ik" as const }] : []),
+    ...(modul("egitim") ? [{ id: "egitim" as const, ad: "Eğitimlerim", ikon: "kalem" as const }] : []),
+    ...(modul("performans") ? [{ id: "performans" as const, ad: "Performans değerlendirmelerim", ikon: "hareket" as const }] : []),
+    ...(modul("bordro") && profil?.veri?.maas_ozeti ? [{ id: "maas" as const, ad: "Maaş özetim", ikon: "puantaj" as const }] : []),
+  ];
+
+  const sekmeler: { id: Sekme; ad: string; ikon: IkonAdi; sayi?: number }[] = [
+    { id: "ana", ad: "Ana sayfa", ikon: "ev" },
+    { id: "talepler", ad: "Talepler", ikon: "rapor" },
+    { id: "vardiya", ad: "Vardiya", ikon: "takvim" },
+    { id: "menu", ad: "Menü", ikon: "menu", sayi: rozet.duyuru + rozet.gorev },
+  ];
+
+  function sekmeAc(s: Sekme, bolum: MenuBolum | null = null) {
+    setSekme(s);
+    setMenuBolum(bolum);
+    window.scrollTo(0, 0);
+  }
+
+  function izinFormuAc(tur: string) {
+    setIzinTalep({ ...izinTalep, izin_turu: tur });
+    setIzinAcik(true);
+  }
+
+  function mesaiFormuAc() {
+    setMesai({ ...mesai, tarih: mesai.tarih || yerelTarih() });
+    setMesaiAcik(true);
+  }
+
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col gap-7 px-5 pb-10 pt-5">
-      {/* Üst bilgi */}
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Avatar ad={personel.ad} soyad={personel.soyad} boyut={42} />
-          <div>
-            <p className="m2 text-sm">{selamlama()}</p>
-            <p className="baslik-font m1 text-lg leading-tight">
-              {personel.ad} {personel.soyad}
+    <div className="mx-auto flex min-h-screen max-w-md flex-col gap-5 px-5 pb-28 pt-5">
+      {/* ================= Ana sayfa ================= */}
+      {sekme === "ana" && (
+        <>
+          {/* Selamlama ve bildirim zili */}
+          <header className="flex items-center justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <Avatar ad={personel.ad} soyad={personel.soyad} boyut={42} />
+              <div className="min-w-0">
+                <p className="m2 text-sm">{selamlama()}</p>
+                <p className="baslik-font m1 truncate text-lg leading-tight">
+                  {personel.ad} {personel.soyad}
+                </p>
+                {profil?.veri?.unvan && <p className="m3 truncate text-xs">{profil.veri.unvan}</p>}
+              </div>
+            </div>
+            {modul("duyuru") && (
+              <button
+                type="button"
+                className="btn btn-hayalet btn-ikon relative"
+                onClick={() => sekmeAc("menu", "duyuru")}
+                aria-label={rozet.duyuru > 0 ? `Duyurular, ${rozet.duyuru} okunmamış` : "Duyurular"}
+              >
+                <Ikon ad="zil" boyut={21} />
+                {rozet.duyuru > 0 && (
+                  <span className="alt-sayac" style={{ top: 2, left: "auto", right: 2 }}>
+                    {rozet.duyuru}
+                  </span>
+                )}
+              </button>
+            )}
+          </header>
+
+          {/* Okunmamış duyuru ve açık görev hatırlatması */}
+          {(rozet.duyuru > 0 || rozet.gorev > 0) && (
+            <div className="flex flex-col gap-2">
+              {rozet.duyuru > 0 && (
+                <button type="button" className="panel-ic flex items-center gap-3 p-3 text-left text-sm" onClick={() => sekmeAc("menu", "duyuru")}>
+                  <Ikon ad="zil" className="m2" />
+                  <span className="m1 flex-1 font-semibold">{rozet.duyuru} okunmamış duyurunuz var</span>
+                  <Ikon ad="sag" boyut={16} className="m3" />
+                </button>
+              )}
+              {rozet.gorev > 0 && (
+                <button type="button" className="panel-ic flex items-center gap-3 p-3 text-left text-sm" onClick={() => sekmeAc("menu", "gorev")}>
+                  <Ikon ad="tik" className="m2" />
+                  <span className="m1 flex-1 font-semibold">{rozet.gorev} açık göreviniz var</span>
+                  <Ikon ad="sag" boyut={16} className="m3" />
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Çıkışı unutulan günler */}
+          {cikisiEksikler.length > 0 && (
+            <section
+              className="flex items-start gap-3 rounded-2xl p-4 text-sm"
+              style={{ background: "var(--hata-acik)", color: "var(--hata)" }}
+              role="alert"
+            >
+              <Ikon ad="uyari" boyut={20} className="mt-0.5 flex-none" />
+              <div className="flex-1">
+                <p className="font-semibold">
+                  {cikisiEksikler.length === 1
+                    ? `${gunMetni(cikisiEksikler[0].created_at)} günü işten çıkış kaydınız yok.`
+                    : "Şu günlerde işten çıkış kaydınız yok:"}
+                </p>
+                {cikisiEksikler.length > 1 && (
+                  <ul className="mt-1 list-disc pl-5">
+                    {cikisiEksikler.map((h) => (
+                      <li key={h.id}>
+                        {gunMetni(h.created_at)} (<span className="sayi">{yerelSaat(h.created_at)}</span> girişi)
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-1">Lütfen yöneticinize bildiriniz. Yönetici çıkışınızı ekleyince bu uyarı kalkar.</p>
+              </div>
+            </section>
+          )}
+
+          {/* Giriş-çıkış */}
+          <section className="panel p-5">
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="baslik-font sayi m1 text-3xl">
+                {ss}:{dd}
+                <span className="m3 saat-sn">:{sn}</span>
+              </p>
+              <p className="m2 text-right text-sm">{uzunTarih()}</p>
+            </div>
+            <div className="mt-4">
+              <Kadran durum={kadranDurumu} islem={secilenIslem} ilerleme={ilerleme} ana={ana} alt={alt} onBas={hareketKaydet} kucuk />
+            </div>
+            <p className="m2 mt-4 min-h-[1.5rem] text-center text-sm font-medium" aria-live="polite">
+              {durumSatiri}
             </p>
-            {profil?.veri?.unvan && <p className="m3 text-xs">{profil.veri.unvan}</p>}
-          </div>
-        </div>
-        <button type="button" className="btn btn-hayalet btn-ikon" onClick={cikisYap} aria-label="Çıkış yap">
-          <Ikon ad="cikis" />
-        </button>
-      </header>
+            {mesaj && (
+              <p
+                className="mt-2 flex items-start justify-center gap-2 text-center text-sm font-semibold"
+                style={{ color: "var(--hata)" }}
+                role="alert"
+              >
+                <Ikon ad="uyari" boyut={17} />
+                <span>{mesaj}</span>
+              </p>
+            )}
+            {yakin && sinirda && dogruluk !== null && (
+              <p className="m3 mt-1 text-center text-xs">
+                Şubeye {yakin.mesafe} m, konum doğruluğu ±{Math.round(dogruluk)} m
+              </p>
+            )}
+            {bugunkuler.length > 0 && (
+              <div className="mt-3 flex flex-wrap justify-center gap-1.5" aria-label="Bugünkü işlemler">
+                {bugunkuler.map((h) => (
+                  <span key={h.id} className={`rozet ${h.islem_turu === "İşe Giriş" ? "rozet-giris" : "rozet-cikis"}`}>
+                    <span className="sayi">{yerelSaat(h.created_at)}</span> {h.islem_turu === "İşe Giriş" ? "Giriş" : "Çıkış"}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="mt-3 text-center">
+              <button
+                type="button"
+                className="btn btn-hayalet btn-kucuk"
+                onClick={() => setSecilenIslem(secilenIslem === "giris" ? "cikis" : "giris")}
+              >
+                {secilenIslem === "giris" ? "Çıkış mı yapacaksınız? Çıkışa geçin" : "Giriş mi yapacaksınız? Girişe geçin"}
+              </button>
+            </div>
+          </section>
 
-      {/* Saat */}
-      <section className="text-center">
-        <p className="baslik-font sayi saat-buyuk m1">
-          {ss}:{dd}
-          <span className="m3 saat-sn">:{sn}</span>
-        </p>
-        <p className="m2 mt-1 text-sm">{uzunTarih()}</p>
-      </section>
-
-      {/* Duyurular: okunmamışlar açık durur */}
-      {token && modul("duyuru") && <MobilDuyurular token={token} />}
-
-      {/* Görevlerim */}
-      {token && modul("gorev") && <MobilGorevler token={token} />}
-
-      {/* Vardiyam: bugün, yarın ve aylık takvim (plan verisi geldiyse) */}
-      {plan && <VardiyamKarti gunPlaniBul={gunPlaniBul} />}
-
-      {/* Telefon bildirimleri */}
-      {token && (
-        <BildirimDugmesi
-          aciklama="İzin talebinizin sonucu, vardiya değişikliği ve unutulan çıkış için bildirim alın."
-          kaydet={async (a) => {
-            const { error } = await supabase.rpc("push_abone_ol", {
-              p_token: token,
-              p_endpoint: a.endpoint,
-              p_p256dh: a.p256dh,
-              p_auth: a.auth,
-            });
-            if (error) throw error;
-          }}
-          birak={async (endpoint) => {
-            await supabase.rpc("push_abonelik_birak", { p_token: token, p_endpoint: endpoint });
-          }}
-        />
+          {/* Bilgi kartları */}
+          <VardiyaKarti
+            bugun={vardiyaVar ? gunPlaniBul(bugun) : null}
+            yarin={vardiyaVar ? gunPlaniBul(gunEkle(bugun, 1)) : null}
+            onAc={() => sekmeAc("vardiya")}
+          />
+          {yillikIzin?.tanimli && <YillikIzinKarti izin={yillikIzin} onAc={() => izinFormuAc("Yıllık İzin")} />}
+          {saatlik && <SaatlikIzinKarti ozet={saatlik} onAc={() => sekmeAc("talepler")} />}
+          {avans && <AvansKarti ozet={avans} onAc={() => sekmeAc("talepler")} />}
+        </>
       )}
 
-      {/* Çıkışı unutulan günler */}
-      {cikisiEksikler.length > 0 && (
-        <section
-          className="flex items-start gap-3 rounded-2xl p-4 text-sm"
-          style={{ background: "var(--hata-acik)", color: "var(--hata)" }}
-          role="alert"
-        >
-          <Ikon ad="uyari" boyut={20} className="mt-0.5 flex-none" />
-          <div className="flex-1">
-            <p className="font-semibold">
-              {cikisiEksikler.length === 1
-                ? `${gunMetni(cikisiEksikler[0].created_at)} günü işten çıkış kaydınız yok.`
-                : "Şu günlerde işten çıkış kaydınız yok:"}
+      {/* ================= Talepler ================= */}
+      {sekme === "talepler" && (
+        <>
+          <h1 className="baslik-font m1 text-2xl">Talepler</h1>
+          <div className="grid grid-cols-2 gap-3">
+            <TalepDugmesi ikon="rapor" baslik="İzin / rapor" aciklama="Yıllık, mazeret, rapor" onBas={() => izinFormuAc("Raporlu / İstirahat")} />
+            <TalepDugmesi ikon="vardiya" baslik="Saatlik izin" aciklama="Gün içinde birkaç saat" onBas={() => izinFormuAc("Saatlik İzin")} />
+            {mesaiTalepleri && <TalepDugmesi ikon="ay" baslik="Fazla mesai" aciklama="Kaldığınız saatler" onBas={mesaiFormuAc} />}
+            {odemeAcik && <TalepDugmesi ikon="arti" baslik="Avans iste" aciklama="Yönetici onayına" onBas={() => setOdemeFormu("Avans")} />}
+            {odemeAcik && <TalepDugmesi ikon="indir" baslik="Masraf bildir" aciklama="Fiş fotoğrafıyla" onBas={() => setOdemeFormu("Masraf")} />}
+          </div>
+          {yillikIzin?.tanimli && (
+            <p className="m2 -mt-1 px-1 text-sm">
+              Yıllık izin bakiyeniz: <strong className="m1">{gunYaz(yillikIzin.kalan)} gün</strong>
+              {yillikIzin.bekleyen ? ` (onay bekleyen ${gunYaz(yillikIzin.bekleyen)})` : ""}
             </p>
-            {cikisiEksikler.length > 1 && (
-              <ul className="mt-1 list-disc pl-5">
-                {cikisiEksikler.map((h) => (
-                  <li key={h.id}>
-                    {gunMetni(h.created_at)} (<span className="sayi">{yerelSaat(h.created_at)}</span> girişi)
+          )}
+
+          {/* Taleplerim */}
+          {talepler && talepler.length > 0 && (
+            <section>
+              <h2 className="baslik-font m1 mb-2 px-1 text-lg">İzin taleplerim</h2>
+              <ul className="panel liste overflow-hidden">
+                {talepler.slice(0, 5).map((t) => (
+                  <li key={t.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="min-w-0 flex-1">
+                      <span className="m1 block truncate text-sm font-semibold">{t.izin_turu}</span>
+                      <span className="m3 block text-xs">
+                        {t.izin_turu === "Saatlik İzin"
+                          ? `${kisaTarih(t.baslangic_tarihi)}, ${t.baslangic_saat?.slice(0, 5)}-${t.bitis_saat?.slice(0, 5)}`
+                          : t.baslangic_tarihi === t.bitis_tarihi
+                          ? kisaTarih(t.baslangic_tarihi)
+                          : `${kisaTarih(t.baslangic_tarihi)} - ${kisaTarih(t.bitis_tarihi)}`}
+                      </span>
+                      {t.karar_notu && (
+                        <span className="mt-0.5 block text-xs" style={{ color: t.durum === "REDDEDILDI" ? "var(--hata)" : undefined }}>
+                          Amir: {t.karar_notu}
+                        </span>
+                      )}
+                    </span>
+                    <DurumRozeti durum={t.durum} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Mesai taleplerim */}
+          {mesaiTalepleri && mesaiTalepleri.length > 0 && (
+            <section>
+              <h2 className="baslik-font m1 mb-2 px-1 text-lg">Fazla mesailerim</h2>
+              <ul className="panel liste overflow-hidden">
+                {mesaiTalepleri.slice(0, 5).map((t) => (
+                  <li key={t.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="min-w-0 flex-1">
+                      <span className="m1 block text-sm font-semibold">
+                        {kisaTarih(t.tarih)}, {sureYaz(t.sure_dk)}
+                      </span>
+                      <span className="m3 block truncate text-xs">
+                        {t.baslangic_saat.slice(0, 5)}-{t.bitis_saat.slice(0, 5)} · {t.neden}
+                      </span>
+                      {t.karar_notu && (
+                        <span className="mt-0.5 block text-xs" style={{ color: t.durum === "REDDEDILDI" ? "var(--hata)" : undefined }}>
+                          Amir: {t.karar_notu}
+                        </span>
+                      )}
+                    </span>
+                    <DurumRozeti durum={t.durum} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* Avans ve masraf */}
+          {token && odemeAcik && odemeler.liste && (
+            <MobilOdemeler
+              token={token}
+              liste={odemeler.liste}
+              yenile={odemeler.getir}
+              form={odemeFormu}
+              onFormKapat={() => setOdemeFormu(null)}
+            />
+          )}
+
+          {!talepler?.length && !mesaiTalepleri?.length && !odemeler.liste?.length && (
+            <p className="m3 px-1 text-sm">Henüz talebiniz yok. Yukarıdaki düğmelerle yeni talep oluşturabilirsiniz.</p>
+          )}
+        </>
+      )}
+
+      {/* ================= Vardiya ================= */}
+      {sekme === "vardiya" && (
+        <>
+          <h1 className="baslik-font m1 text-2xl">Vardiya ve hareketler</h1>
+          {plan ? (
+            <VardiyamKarti gunPlaniBul={gunPlaniBul} gomulu />
+          ) : (
+            <VardiyaKarti bugun={vardiya ? gunPlaniBul(bugun) : null} yarin={vardiya ? gunPlaniBul(gunEkle(bugun, 1)) : null} />
+          )}
+
+          {/* Önceki işlemler */}
+          <section>
+            <h2 className="baslik-font m1 mb-2 px-1 text-lg">Son giriş-çıkışlarım</h2>
+            {gecmis.length === 0 ? (
+              <p className="panel m3 p-4 text-sm">Henüz giriş-çıkış kaydınız yok.</p>
+            ) : (
+              <ul className="panel liste overflow-hidden">
+                {gecmis.map((h) => (
+                  <li key={h.id} className="flex items-center gap-3 px-4 py-3">
+                    <span className="nokta" style={{ background: h.islem_turu === "İşe Giriş" ? "var(--giris)" : "var(--cikis)" }} />
+                    <span className="m1 flex-1 text-sm font-semibold">
+                      {h.islem_turu === "İşe Giriş" ? "Giriş" : "Çıkış"}
+                      <span className="m3 ml-2 text-xs font-normal">{h.sube_ad || "Şube"}</span>
+                    </span>
+                    <span className="m2 sayi text-sm">
+                      {yerelTarih(h.created_at) === bugun ? "Bugün" : kisaTarih(yerelTarih(h.created_at))}, {yerelSaat(h.created_at)}
+                    </span>
                   </li>
                 ))}
               </ul>
             )}
-            <p className="mt-1">Lütfen yöneticinize bildiriniz. Yönetici çıkışınızı ekleyince bu uyarı kalkar.</p>
-          </div>
-        </section>
+          </section>
+        </>
       )}
 
-      {/* Kadran */}
-      <section>
-        <Kadran durum={kadranDurumu} islem={secilenIslem} ilerleme={ilerleme} ana={ana} alt={alt} onBas={hareketKaydet} />
-        <p className="m2 mt-4 min-h-[1.5rem] text-center text-sm font-medium" aria-live="polite">
-          {durumSatiri}
-        </p>
-        {mesaj && (
-          <p
-            className="mt-2 flex items-start justify-center gap-2 text-center text-sm font-semibold"
-            style={{ color: "var(--hata)" }}
-            role="alert"
-          >
-            <Ikon ad="uyari" boyut={17} />
-            <span>{mesaj}</span>
-          </p>
-        )}
-        {yakin && sinirda && dogruluk !== null && (
-          <p className="m3 mt-1 text-center text-xs">
-            Şubeye {yakin.mesafe} m, konum doğruluğu ±{Math.round(dogruluk)} m
-          </p>
-        )}
-      </section>
-
-      {/* İşlem seçici */}
-      <section>
-        <div className="segment" role="tablist" aria-label="İşlem türü">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={secilenIslem === "giris"}
-            data-aktif={secilenIslem === "giris"}
-            onClick={() => setSecilenIslem("giris")}
-          >
-            Giriş
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={secilenIslem === "cikis"}
-            data-aktif={secilenIslem === "cikis"}
-            onClick={() => setSecilenIslem("cikis")}
-          >
-            Çıkış
-          </button>
-        </div>
-        <p className="ipucu text-center">Sistem sizin için doğru işlemi seçer, gerekirse buradan değiştirin.</p>
-      </section>
-
-      {/* Bugün */}
-      <section className="panel p-5">
-        <h2 className="baslik-font m1 mb-3 text-lg">Bugün</h2>
-        {bugunkuler.length === 0 ? (
-          <p className="m3 text-sm">Bugün henüz işlem yapılmadı.</p>
+      {/* ================= Menü ================= */}
+      {sekme === "menu" &&
+        (menuBolum && token ? (
+          <>
+            <button type="button" className="btn btn-hayalet btn-kucuk self-start" onClick={() => sekmeAc("menu")}>
+              <span style={{ display: "inline-flex", transform: "rotate(180deg)" }}>
+                <Ikon ad="sag" boyut={16} />
+              </span>
+              Menü
+            </button>
+            {menuBolum === "duyuru" && <MobilDuyurular token={token} bosMetin="Size gönderilmiş duyuru yok." />}
+            {menuBolum === "gorev" && <MobilGorevler token={token} bosMetin="Size verilmiş görev yok." />}
+            {menuBolum === "zimmet" && <MobilZimmetler token={token} bosMetin="Üzerinize kayıtlı eşya yok." />}
+            {menuBolum === "egitim" && <MobilEgitimler token={token} bosMetin="Eğitim kaydınız yok." />}
+            {menuBolum === "performans" && <MobilPerformans token={token} bosMetin="Performans değerlendirmeniz yok." />}
+            {menuBolum === "maas" && <MobilMaasOzeti token={token} />}
+          </>
         ) : (
-          <div className="zaman">
-            {bugunkuler.map((h) => (
-              <div key={h.id} className="zaman-oge" data-islem={h.islem_turu === "İşe Giriş" ? "giris" : "cikis"}>
-                <p className="m1 text-sm font-semibold">
-                  <span className="sayi">{yerelSaat(h.created_at)}</span>
-                  <span className="m2 ml-2 font-medium">{h.islem_turu === "İşe Giriş" ? "Giriş" : "Çıkış"}</span>
+          <>
+            <section className="panel flex items-center gap-3 p-4">
+              <Avatar ad={personel.ad} soyad={personel.soyad} boyut={46} />
+              <div className="min-w-0">
+                <p className="baslik-font m1 truncate text-lg leading-tight">
+                  {personel.ad} {personel.soyad}
                 </p>
-                <p className="m3 text-xs">{h.sube_ad || "Şube"}</p>
+                <p className="m3 truncate text-xs">
+                  {[profil?.veri?.unvan, personel.departman, `Sicil ${personel.sicil_no}`].filter(Boolean).join(" · ")}
+                </p>
+                {(profil?.veri?.firma || firmaAd) && <p className="m3 truncate text-xs">{profil?.veri?.firma || firmaAd}</p>}
               </div>
-            ))}
-          </div>
-        )}
-      </section>
+            </section>
 
-      {/* İzin talebi */}
-      <button
-        type="button"
-        onClick={() => setIzinAcik(true)}
-        className="panel flex w-full items-center gap-3 p-4 text-left"
-      >
-        <span className="bos-ikon flex h-10 w-10 items-center justify-center rounded-full">
-          <Ikon ad="rapor" />
-        </span>
-        <span className="flex-1">
-          <span className="m1 block font-semibold">İzin veya rapor talebi</span>
-          <span className="m3 block text-xs">
-            {yillikIzin?.tanimli
-              ? `Yıllık izin bakiyeniz: ${gunYaz(yillikIzin.kalan)} gün${
-                  yillikIzin.bekleyen ? ` (onay bekleyen ${gunYaz(yillikIzin.bekleyen)})` : ""
-                }`
-              : "İK onayına gönderilir, onaylanınca puantaja işlenir."}
-          </span>
-        </span>
-        <Ikon ad="sag" className="m3" />
-      </button>
+            {menuOgeleri.length > 0 && (
+              <ul className="panel liste overflow-hidden">
+                {menuOgeleri.map((m) => (
+                  <li key={m.id}>
+                    <button type="button" className="flex w-full items-center gap-3 px-4 py-3.5 text-left" onClick={() => sekmeAc("menu", m.id)}>
+                      <Ikon ad={m.ikon} className="m2" />
+                      <span className="m1 flex-1 text-sm font-semibold">{m.ad}</span>
+                      {!!m.sayi && <span className="rozet rozet-hata">{m.sayi}</span>}
+                      <Ikon ad="sag" boyut={16} className="m3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
 
-      {/* Fazla mesai bildir (mobil_ozet destekliyorsa) */}
-      {mesaiTalepleri && (
-        <button
-          type="button"
-          onClick={() => {
-            setMesai({ ...mesai, tarih: mesai.tarih || yerelTarih() });
-            setMesaiAcik(true);
-          }}
-          className="panel flex w-full items-center gap-3 p-4 text-left"
-        >
-          <span className="bos-ikon flex h-10 w-10 items-center justify-center rounded-full">
-            <Ikon ad="ay" />
-          </span>
-          <span className="flex-1">
-            <span className="m1 block font-semibold">Fazla mesai bildir</span>
-            <span className="m3 block text-xs">Mesaiye kaldığınız saatleri girin, yöneticinizin onayına gider.</span>
-          </span>
-          <Ikon ad="sag" className="m3" />
-        </button>
-      )}
+            {/* Telefon bildirimleri */}
+            {token && (
+              <BildirimDugmesi
+                aciklama="İzin talebinizin sonucu, vardiya değişikliği ve unutulan çıkış için bildirim alın."
+                kaydet={async (a) => {
+                  const { error } = await supabase.rpc("push_abone_ol", {
+                    p_token: token,
+                    p_endpoint: a.endpoint,
+                    p_p256dh: a.p256dh,
+                    p_auth: a.auth,
+                  });
+                  if (error) throw error;
+                }}
+                birak={async (endpoint) => {
+                  await supabase.rpc("push_abonelik_birak", { p_token: token, p_endpoint: endpoint });
+                }}
+              />
+            )}
 
-      {/* Avans ve masraf */}
-      {token && modul("odeme") && <MobilOdemeler token={token} />}
-
-      {/* Maaş özetim: firma açtıysa */}
-      {token && modul("bordro") && profil?.veri?.maas_ozeti && <MobilMaasOzeti token={token} />}
-
-      {/* Mesai taleplerim */}
-      {mesaiTalepleri && mesaiTalepleri.length > 0 && (
-        <section>
-          <h2 className="baslik-font m1 mb-2 px-1 text-lg">Fazla mesailerim</h2>
-          <ul className="panel liste overflow-hidden">
-            {mesaiTalepleri.slice(0, 5).map((t) => (
-              <li key={t.id} className="flex items-center gap-3 px-4 py-3">
-                <span className="min-w-0 flex-1">
-                  <span className="m1 block text-sm font-semibold">
-                    {kisaTarih(t.tarih)}, {sureYaz(t.sure_dk)}
-                  </span>
-                  <span className="m3 block truncate text-xs">
-                    {t.baslangic_saat.slice(0, 5)}-{t.bitis_saat.slice(0, 5)} · {t.neden}
-                  </span>
-                  {t.karar_notu && (
-                    <span className="mt-0.5 block text-xs" style={{ color: t.durum === "REDDEDILDI" ? "var(--hata)" : undefined }}>
-                      Amir: {t.karar_notu}
-                    </span>
-                  )}
-                </span>
-                <span
-                  className={`rozet ${
-                    t.durum === "ONAYLANDI" ? "rozet-giris" : t.durum === "REDDEDILDI" ? "rozet-hata" : "rozet-uyari"
-                  }`}
+            {/* Ana ekrana ekle ipucu */}
+            {ipucuGoster && (
+              <div className="panel-ic flex items-start gap-3 p-4 text-sm">
+                <Ikon ad="telefon" className="m2" />
+                <p className="m2 flex-1">
+                  Uygulama gibi kullanmak için: <strong>iPhone</strong>&apos;da Safari&apos;de Paylaş, ardından &quot;Ana Ekrana
+                  Ekle&quot;. <strong>Android</strong>&apos;de Chrome menüsünden &quot;Uygulamayı yükle&quot;.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-hayalet btn-ikon btn-kucuk"
+                  aria-label="İpucunu kapat"
+                  onClick={() => {
+                    localStorage.setItem(IPUCU_ANAHTAR, "1");
+                    setIpucuGoster(false);
+                  }}
                 >
-                  {t.durum === "ONAYLANDI" ? "Onaylandı" : t.durum === "REDDEDILDI" ? "Reddedildi" : "Bekliyor"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+                  <Ikon ad="kapat" boyut={15} />
+                </button>
+              </div>
+            )}
 
-      {/* Taleplerim */}
-      {talepler && talepler.length > 0 && (
-        <section>
-          <h2 className="baslik-font m1 mb-2 px-1 text-lg">Taleplerim</h2>
-          <ul className="panel liste overflow-hidden">
-            {talepler.slice(0, 5).map((t) => (
-              <li key={t.id} className="flex items-center gap-3 px-4 py-3">
-                <span className="min-w-0 flex-1">
-                  <span className="m1 block truncate text-sm font-semibold">{t.izin_turu}</span>
-                  <span className="m3 block text-xs">
-                    {t.izin_turu === "Saatlik İzin"
-                      ? `${kisaTarih(t.baslangic_tarihi)}, ${t.baslangic_saat?.slice(0, 5)}-${t.bitis_saat?.slice(0, 5)}`
-                      : t.baslangic_tarihi === t.bitis_tarihi
-                      ? kisaTarih(t.baslangic_tarihi)
-                      : `${kisaTarih(t.baslangic_tarihi)} - ${kisaTarih(t.bitis_tarihi)}`}
-                  </span>
-                  {t.karar_notu && (
-                    <span className="mt-0.5 block text-xs" style={{ color: t.durum === "REDDEDILDI" ? "var(--hata)" : undefined }}>
-                      Amir: {t.karar_notu}
-                    </span>
-                  )}
-                </span>
-                <span
-                  className={`rozet ${
-                    t.durum === "ONAYLANDI" ? "rozet-giris" : t.durum === "REDDEDILDI" ? "rozet-hata" : "rozet-uyari"
-                  }`}
-                >
-                  {t.durum === "ONAYLANDI" ? "Onaylandı" : t.durum === "REDDEDILDI" ? "Reddedildi" : "Bekliyor"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+            <button type="button" className="btn btn-ikincil w-full" onClick={cikisYap}>
+              <Ikon ad="cikis" boyut={17} />
+              Oturumu kapat
+            </button>
+          </>
+        ))}
 
-      {/* Zimmetimdeki eşyalar */}
-      {token && modul("zimmet") && <MobilZimmetler token={token} />}
-
-      {/* Eğitimlerim */}
-      {token && modul("egitim") && <MobilEgitimler token={token} />}
-
-      {/* Performans değerlendirmelerim */}
-      {token && modul("performans") && <MobilPerformans token={token} />}
-
-      {/* Önceki işlemler */}
-      {gecmis.length > 0 && (
-        <section>
-          <h2 className="baslik-font m1 mb-2 px-1 text-lg">Son işlemler</h2>
-          <ul className="panel liste overflow-hidden">
-            {gecmis.map((h) => (
-              <li key={h.id} className="flex items-center gap-3 px-4 py-3">
-                <span className="nokta" style={{ background: h.islem_turu === "İşe Giriş" ? "var(--giris)" : "var(--cikis)" }} />
-                <span className="m1 flex-1 text-sm font-semibold">
-                  {h.islem_turu === "İşe Giriş" ? "Giriş" : "Çıkış"}
-                  <span className="m3 ml-2 text-xs font-normal">{h.sube_ad || "Şube"}</span>
-                </span>
-                <span className="m2 sayi text-sm">
-                  {yerelTarih(h.created_at) === bugun ? "Bugün" : kisaTarih(yerelTarih(h.created_at))}, {yerelSaat(h.created_at)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {/* Ana ekrana ekle ipucu */}
-      {ipucuGoster && (
-        <div className="panel-ic flex items-start gap-3 p-4 text-sm">
-          <Ikon ad="telefon" className="m2" />
-          <p className="m2 flex-1">
-            Uygulama gibi kullanmak için: <strong>iPhone</strong>&apos;da Safari&apos;de Paylaş, ardından &quot;Ana Ekrana
-            Ekle&quot;. <strong>Android</strong>&apos;de Chrome menüsünden &quot;Uygulamayı yükle&quot;.
-          </p>
-          <button
-            type="button"
-            className="btn btn-hayalet btn-ikon btn-kucuk"
-            aria-label="İpucunu kapat"
-            onClick={() => {
-              localStorage.setItem(IPUCU_ANAHTAR, "1");
-              setIpucuGoster(false);
-            }}
-          >
-            <Ikon ad="kapat" boyut={15} />
-          </button>
+      {/* Alt sekmeler */}
+      <nav className="alt-cubuk fixed inset-x-0 bottom-0 z-30" aria-label="Uygulama menüsü">
+        <div className="mx-auto flex max-w-md">
+          {sekmeler.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="alt-sekme"
+              data-aktif={sekme === s.id}
+              aria-current={sekme === s.id ? "page" : undefined}
+              onClick={() => sekmeAc(s.id)}
+            >
+              <Ikon ad={s.ikon} boyut={21} />
+              {s.ad}
+              {!!s.sayi && <span className="alt-sayac">{s.sayi}</span>}
+            </button>
+          ))}
         </div>
-      )}
+      </nav>
 
       {/* Fazla mesai penceresi */}
       {mesaiAcik && (

@@ -5,10 +5,10 @@ import { supabase } from "../../lib/supabase";
 import { kisaTarih, yerelTarih } from "../../lib/tarih";
 import { olayBildir } from "../../lib/bildirim";
 import { gunEkle } from "../../lib/vardiyaPlani";
-import { Ikon, Modal, useBildirim } from "../ui";
+import { Modal, useBildirim } from "../ui";
 import { DURUM_ADI, MASRAF_KATEGORILERI, tl, tutarOku, type OdemeTalebi } from "../../lib/odeme";
 
-type MobilOdeme = Pick<OdemeTalebi, "id" | "tur" | "tutar" | "tarih" | "kategori" | "aciklama" | "durum" | "karar_notu" | "odeme_tarihi" | "created_at"> & {
+export type MobilOdeme = Pick<OdemeTalebi, "id" | "tur" | "tutar" | "tarih" | "kategori" | "aciklama" | "durum" | "karar_notu" | "odeme_tarihi" | "created_at"> & {
   fis_var: boolean;
 };
 
@@ -42,17 +42,17 @@ async function fisHazirla(dosya: File): Promise<Blob> {
   }
 }
 
-/** Personelin avans isteği ve masraf bildirimi. Veritabanında bölüm kurulu değilse hiçbir şey göstermez. */
-export default function MobilOdemeler({ token }: { token: string }) {
-  const { bildir } = useBildirim();
-  const [liste, setListe] = useState<MobilOdeme[] | null>(null);
-  const [acik, setAcik] = useState(false);
+/** Avans ve masraf listesi; ana ekran kartı ve Talepler sekmesi aynı listeyi kullanır. Bölüm kurulu değilse liste null kalır. */
+export function useOdemeler(token: string | null) {
+  const [veri, setVeri] = useState<{ token: string; liste: MobilOdeme[] } | null>(null);
 
   const getir = useCallback(
     () =>
-      Promise.resolve(supabase.rpc("mobil_odemeler", { p_token: token })).then(({ data, error }) => {
-        if (!error) setListe((data ?? []) as MobilOdeme[]);
-      }),
+      token
+        ? Promise.resolve(supabase.rpc("mobil_odemeler", { p_token: token })).then(({ data, error }) => {
+            if (!error) setVeri({ token, liste: (data ?? []) as MobilOdeme[] });
+          })
+        : Promise.resolve(),
     [token]
   );
 
@@ -60,21 +60,27 @@ export default function MobilOdemeler({ token }: { token: string }) {
     getir();
   }, [getir]);
 
-  if (!liste) return null;
+  return { liste: veri && veri.token === token ? veri.liste : null, getir };
+}
+
+/** Personelin avans ve masraf talepleri; form, Talepler sekmesindeki düğmelerle açılır. */
+export default function MobilOdemeler({
+  token,
+  liste,
+  yenile,
+  form,
+  onFormKapat,
+}: {
+  token: string;
+  liste: MobilOdeme[];
+  yenile: () => Promise<void>;
+  form: "Avans" | "Masraf" | null;
+  onFormKapat: () => void;
+}) {
+  const { bildir } = useBildirim();
 
   return (
     <>
-      <button type="button" onClick={() => setAcik(true)} className="panel flex w-full items-center gap-3 p-4 text-left">
-        <span className="bos-ikon flex h-10 w-10 items-center justify-center rounded-full">
-          <Ikon ad="rapor" />
-        </span>
-        <span className="flex-1">
-          <span className="m1 block font-semibold">Avans iste / masraf bildir</span>
-          <span className="m3 block text-xs">Masraf fişinin fotoğrafını ekleyin, yöneticinizin onayına gider.</span>
-        </span>
-        <Ikon ad="sag" className="m3" />
-      </button>
-
       {liste.length > 0 && (
         <section>
           <h2 className="baslik-font m1 mb-2 px-1 text-lg">Avans ve masraflarım</h2>
@@ -109,14 +115,15 @@ export default function MobilOdemeler({ token }: { token: string }) {
         </section>
       )}
 
-      {acik && (
+      {form && (
         <TalepFormu
           token={token}
-          onKapat={() => setAcik(false)}
+          ilkTur={form}
+          onKapat={onFormKapat}
           onGonderildi={async () => {
-            setAcik(false);
+            onFormKapat();
             bildir("Talebiniz yöneticinize gönderildi.", "basari");
-            await getir();
+            await yenile();
           }}
         />
       )}
@@ -124,10 +131,20 @@ export default function MobilOdemeler({ token }: { token: string }) {
   );
 }
 
-function TalepFormu({ token, onKapat, onGonderildi }: { token: string; onKapat: () => void; onGonderildi: () => Promise<void> }) {
+function TalepFormu({
+  token,
+  ilkTur,
+  onKapat,
+  onGonderildi,
+}: {
+  token: string;
+  ilkTur: "Avans" | "Masraf";
+  onKapat: () => void;
+  onGonderildi: () => Promise<void>;
+}) {
   const { bildir } = useBildirim();
   const bugun = yerelTarih();
-  const [tur, setTur] = useState<"Masraf" | "Avans">("Masraf");
+  const [tur, setTur] = useState<"Masraf" | "Avans">(ilkTur);
   const [tutar, setTutar] = useState("");
   const [tarih, setTarih] = useState(bugun);
   const [kategori, setKategori] = useState("");

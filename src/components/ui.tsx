@@ -198,6 +198,20 @@ const YOLLAR = {
       <path d="M7 6.8a7.5 7.5 0 1 0 10 0" />
     </>
   ),
+  ev: (
+    <>
+      <path d="M4 10.5 12 4l8 6.5" />
+      <path d="M6 9v10.5h12V9" />
+      <path d="M10 19.5v-5h4v5" />
+    </>
+  ),
+  menu: <path d="M4.5 7h15M4.5 12h15M4.5 17h15" />,
+  zil: (
+    <>
+      <path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9Z" />
+      <path d="M10 20a2 2 0 0 0 4 0" />
+    </>
+  ),
 } as const;
 
 export type IkonAdi = keyof typeof YOLLAR;

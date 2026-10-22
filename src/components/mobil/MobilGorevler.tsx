@@ -28,7 +28,7 @@ const HATALAR: Record<string, string> = {
 };
 
 /** Personelin görevleri: açık olanlar başta; "Başladım" ve notla "Tamamladım". Görev yoksa hiçbir şey göstermez. */
-export default function MobilGorevler({ token }: { token: string }) {
+export default function MobilGorevler({ token, bosMetin }: { token: string; bosMetin?: string }) {
   const { bildir } = useBildirim();
   const [liste, setListe] = useState<MobilGorev[] | null>(null);
   const [acikGorev, setAcikGorev] = useState<string | null>(null);
@@ -60,7 +60,8 @@ export default function MobilGorevler({ token }: { token: string }) {
     return true;
   }
 
-  if (!liste || liste.length === 0) return null;
+  if (!liste) return null;
+  if (liste.length === 0) return bosMetin ? <p className="panel m3 p-4 text-sm">{bosMetin}</p> : null;
   const bugun = yerelTarih();
   const aciklar = liste.filter((g) => g.acik);
   const kapali = liste.filter((g) => !g.acik);
